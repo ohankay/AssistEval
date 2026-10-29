@@ -1,0 +1,26 @@
+# Yarı yönlendirmeli mod: simülatör LLM'i persona + hedef + yönlendirmeye göre replik üretir.
+# --llm mock ile koşulduğunda her adımdaki "çift tırnaklı" ifade söylenir (veya o başlıktaki butona tıklanır).
+id: EFT-001
+baslik: Kayıtlı alıcıya EFT
+etiketler: [kritik, para-transferi]
+mod: yonlendirmeli
+
+persona: 45 yaşında, teknolojiye çok hakim olmayan, kısa cümleler kuran bir müşteri.
+hedef: Kayıtlı alıcı Ahmet Yılmaz'a 500 TL göndermek.
+
+yonlendirme:
+  - 'Para göndermek istediğini söyle ama ilk mesajda kime ve ne kadar olduğunu söyleme: "Para göndermek istiyorum"'
+  - 'Alıcı sorulursa listeden "Ahmet Yılmaz" seç'
+  - 'Tutar sorulursa "500 TL" de'
+  - 'Onay istenirse "Onayla"'
+
+test_verisi:
+  alici: Ahmet Yılmaz
+  tutar: 500 TL
+
+cikis:
+  basari: Asistan transferin gerçekleştiğini teyit etti.
+  basarisizlik: Asistan işlemi reddetti, konu dışına çıktı veya aynı soruyu tekrar tekrar sordu.
+  basari_ifadeleri: ["başarıyla gerçekleştirildi"]
+  hata_ifadeleri: ["anlayamadım", "bir hata oluştu"]
+  max_tur: 8

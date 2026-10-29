@@ -1,0 +1,30 @@
+# Gizli olmayan ayarlar. Şifreler ve müşteri bilgileri .env dosyasında (.env.example'a bakın).
+
+assistant:
+  base_url: https://mobileprep.kuveytturk.com.tr/BOA.Integration.MobileBranch
+  chatbot_message_url: https://boaprep.kuveytturk.com.tr/chatbot//api/Chat/Message
+  channel_id: 5
+  language_id: 1
+  main_resource_code: MOBRMAINPG
+  main_resource_code_dashboard: MOBRDASHBO
+  main_resource_id: 22027
+  token_refresh_seconds: 240   # token'lar 5 dk geçerli, 4 dk'da bir yeniden login
+  timeout_seconds: 60
+  device:
+    device_id: B82E44F4-1688-4D0B-9F1E-B5174DF579D3
+    device_model: iPhone 15 Pro Max
+    device_os_name: IOS
+    device_os_version: "26.6"
+    app_name: IOS MobileBranch
+    app_version: 7.2.5
+    mobile_application_name: OrganikProd
+    pwf_application_name: KTIOSDev
+
+# Simülatör LLM'i (yönlendirmeli mod). OpenAI uyumlu endpoint: vLLM, Ollama, LM Studio...
+llm:
+  base_url: http://localhost:8000/v1
+  model: qwen   # model netleşince güncellenecek
+  temperature: 0
+  timeout_seconds: 120
+
+output_dir: runs

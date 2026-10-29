@@ -1,0 +1,13 @@
+# Katı script modu: adımlar sırayla gönderilir, LLM gerekmez.
+id: KMP-001
+baslik: Kampanyaları listeleyip birinin detayına bakma
+etiketler: [kritik, kampanya]
+mod: script
+
+adimlar:
+  - mesaj: Kampanya listele
+  - buton: Detay          # asistanın sunduğu butona başlığıyla tıklanır; yoksa koşum TIKANDI biter
+
+cikis:
+  max_tur: 5
+  hata_ifadeleri: ["anlayamadım", "bir hata oluştu"]

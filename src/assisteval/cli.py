@@ -77,11 +77,15 @@ def main(argv=None) -> int:
 
 
 def _setup_console() -> None:
-    # Windows'ta çıktı dosyaya/pipe'a yönlendirilince yerel kod sayfası (cp1254) kullanılır;
-    # kodlanamayan semboller (✓ → ›) hata yerine '?' olarak yazılsın.
+    # Windows'ta çıktı dosyaya/pipe'a yönlendirilince yerel kod sayfası (cp1252/cp1254) kullanılır ve
+    # Türkçe karakterler kaybolur: yönlendirilmiş çıktı UTF-8 yazılsın. Konsolda Python zaten Unicode yazar;
+    # yine de kodlanamayan bir sembol hata yerine '?' olsun.
     for stream in (sys.stdout, sys.stderr):
         with contextlib.suppress(AttributeError, ValueError):
-            stream.reconfigure(errors="replace")
+            if stream.isatty():
+                stream.reconfigure(errors="replace")
+            else:
+                stream.reconfigure(encoding="utf-8", errors="replace")
     # Kurumsal CA'lar Windows sertifika deposunda: requests da o depoyu kullansın.
     if os.environ.get("ASSISTEVAL_NO_TRUSTSTORE") != "1":
         with contextlib.suppress(Exception):

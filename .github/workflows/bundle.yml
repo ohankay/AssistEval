@@ -83,9 +83,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           & $exe --config C:\calisma\config.yaml check | Out-String | Write-Output
           if ($LASTEXITCODE -ne 1) { Write-Error "boş .env ile check 1 dönmeli"; exit 1 }
-          & $exe --config C:\calisma\config.yaml --assistant mock run C:\calisma\scenarios\ornek --llm mock > C:\calisma\cikti.txt
+          # cmd ile yönlendirme: baytlar olduğu gibi dosyaya yazılır (PowerShell '>' yeniden kodlar)
+          cmd /c "$exe --config C:\calisma\config.yaml --assistant mock run C:\calisma\scenarios\ornek --llm mock > C:\calisma\cikti.txt"
           if ($LASTEXITCODE -ne 0) { Get-Content C:\calisma\cikti.txt; exit 1 }
-          Get-Content C:\calisma\cikti.txt
+          Get-Content C:\calisma\cikti.txt -Encoding utf8
+          # Yönlendirilmiş çıktıda Türkçe karakterler korunmalı ("MÜŞTERİ")
+          & C:\assisteval\Scripts\python.exe -c "import sys; t = open(r'C:\calisma\cikti.txt', encoding='utf-8').read(); sys.exit(0 if 'M\u00dc\u015eTER\u0130' in t else 1)"
+          if ($LASTEXITCODE -ne 0) { Write-Error "yönlendirilmiş çıktıda Türkçe karakterler bozuk"; exit 1 }
           $runs = @(Get-ChildItem C:\calisma\runs\*.json)
           if ($runs.Count -ne 2) { Write-Error "2 transcript bekleniyordu, $($runs.Count) var"; exit 1 }
           $info = & C:\assisteval\Scripts\python.exe -c "import struct, sys; print('%d.%d-%d' % (sys.version_info[0], sys.version_info[1], struct.calcsize('P') * 8))"

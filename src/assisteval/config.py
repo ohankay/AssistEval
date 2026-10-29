@@ -75,10 +75,11 @@ class Settings:
 
 
 def load_settings(path: str | Path = "config.yaml") -> Settings:
-    load_dotenv()
-    path = Path(path)
+    path = Path(path).resolve()
     if not path.exists():
-        raise ConfigError(f"Ayar dosyası bulunamadı: {path}")
+        raise ConfigError(f"Ayar dosyası bulunamadı: {path} (çalışma klasörü için: assisteval init <klasör>)")
+    # .env her zaman config.yaml'ın yanından okunur (çalışılan dizinden bağımsız)
+    load_dotenv(path.parent / ".env")
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
 
     llm = dict(data.get("llm", {}))
@@ -86,5 +87,5 @@ def load_settings(path: str | Path = "config.yaml") -> Settings:
     return Settings(
         assistant=AssistantConfig(**data["assistant"]),
         llm=LLMConfig(**llm),
-        output_dir=Path(data.get("output_dir", "runs")),
+        output_dir=path.parent / data.get("output_dir", "runs"),
     )

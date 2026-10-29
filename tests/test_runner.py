@@ -10,7 +10,7 @@ from assisteval.simulator.scenario import Scenario, Step, load_scenario
 from assisteval.simulator.user import LLMUser, ScriptUser, parse_decision
 from tests.test_assistant_client import make_client
 
-EXAMPLES = Path(__file__).parent.parent / "scenarios" / "ornek"
+EXAMPLES = Path(__file__).parent.parent / "src" / "assisteval" / "templates" / "scenarios" / "ornek"
 
 
 @pytest.fixture

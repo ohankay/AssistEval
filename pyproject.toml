@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "assisteval"
+version = "0.1.0"
+description = "Bankacılık GenAI asistanı için simülasyon, değerlendirme ve drift izleme."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [{ name = "ohankay" }]
+dependencies = [
+    "requests>=2.31",
+    "PyYAML>=6.0",
+    "python-dotenv>=1.0",
+    # İşletim sisteminin sertifika deposunu kullanır: kurumsal CA'lar Windows deposundaysa SSL hatası olmaz.
+    "truststore>=0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "uv>=0.5", "packaging>=23"]
+
+[project.scripts]
+assisteval = "assisteval.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+assisteval = ["templates/*", "templates/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

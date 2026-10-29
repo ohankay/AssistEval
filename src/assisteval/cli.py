@@ -1,18 +1,27 @@
 """Komut satırı.
 
-  python -m assisteval smoke                          # login + yeni sohbet + /get_started (bağlantı kontrolü)
-  python -m assisteval smoke --mesaj "Kampanyalar"    # + tek mesaj
-  python -m assisteval run scenarios/ornek            # klasördeki tüm senaryolar
-  python -m assisteval run senaryo.yaml --assistant mock --llm mock
+  assisteval init calisma                     # çalışma klasörü: config.yaml, .env, örnek senaryolar
+  assisteval check                            # kurulum + ayar kontrolü (ağ gerektirmez)
+  assisteval smoke                            # login + yeni sohbet + /get_started (bağlantı kontrolü)
+  assisteval smoke --mesaj "Kampanyalar"      # + tek mesaj
+  assisteval run scenarios/ornek              # klasördeki tüm senaryolar
+  assisteval --assistant mock run scenarios/ornek --llm mock   # tamamen offline deneme
 """
 
 import argparse
 import contextlib
+import json
 import logging
+import os
+import platform
+import shutil
+import struct
 import sys
 from dataclasses import replace
+from importlib import resources
 from pathlib import Path
 
+from . import __version__
 from .simulator.assistant_client import AssistantClient
 from .config import ConfigError, Credentials, load_settings
 from .simulator.llm import MockLLM, OpenAICompatibleLLM
@@ -28,11 +37,18 @@ MOCK_CREDS = Credentials(
 
 
 def main(argv=None) -> int:
+    _setup_console()
     parser = argparse.ArgumentParser(prog="assisteval", description="AssistEval: bankacılık asistanı test simülatörü")
+    parser.add_argument("--version", action="version", version=f"assisteval {__version__}")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--assistant", choices=("real", "mock"), default="real", help="gerçek asistan veya sahte sunucu")
     parser.add_argument("-v", "--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    init = sub.add_parser("init", help="çalışma klasörü oluştur (config.yaml, .env, örnek senaryolar)")
+    init.add_argument("folder", nargs="?", default=".")
+
+    sub.add_parser("check", help="kurulum ve ayar kontrolü (ağ gerektirmez)")
 
     smoke = sub.add_parser("smoke", help="bağlantı kontrolü: login + yeni sohbet + /get_started")
     smoke.add_argument("--mesaj", help="açılıştan sonra gönderilecek tek mesaj")
@@ -45,6 +61,10 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(message)s")
 
+    if args.command == "init":
+        return _init(Path(args.folder))
+    if args.command == "check":
+        return _check(args.config)
     try:
         settings = load_settings(args.config)
         with _client(settings, args.assistant) as client:
@@ -54,6 +74,69 @@ def main(argv=None) -> int:
     except (ConfigError, ScenarioError) as e:
         print(f"HATA: {e}", file=sys.stderr)
         return 2
+
+
+def _setup_console() -> None:
+    # Windows'ta çıktı dosyaya/pipe'a yönlendirilince yerel kod sayfası (cp1254) kullanılır;
+    # kodlanamayan semboller (✓ → ›) hata yerine '?' olarak yazılsın.
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(AttributeError, ValueError):
+            stream.reconfigure(errors="replace")
+    # Kurumsal CA'lar Windows sertifika deposunda: requests da o depoyu kullansın.
+    if os.environ.get("ASSISTEVAL_NO_TRUSTSTORE") != "1":
+        with contextlib.suppress(Exception):
+            import truststore
+
+            truststore.inject_into_ssl()
+
+
+def _init(folder: Path) -> int:
+    templates = resources.files("assisteval") / "templates"
+    folder.mkdir(parents=True, exist_ok=True)
+    plan = [("config.yaml", "config.yaml"), ("env.example", ".env.example"), ("env.example", ".env")]
+    for src, dst in plan:
+        target = folder / dst
+        if target.exists():
+            print(f"  atlandı (zaten var): {target}")
+            continue
+        target.write_text((templates / src).read_text(encoding="utf-8"), encoding="utf-8")
+        print(f"  oluşturuldu: {target}")
+    scenarios = folder / "scenarios" / "ornek"
+    if scenarios.exists():
+        print(f"  atlandı (zaten var): {scenarios}")
+    else:
+        with resources.as_file(templates / "scenarios" / "ornek") as src_dir:
+            shutil.copytree(src_dir, scenarios)
+        print(f"  oluşturuldu: {scenarios}")
+    print(f"\nSonraki adım: {folder / '.env'} dosyasını doldurun, sonra bu klasörde 'assisteval check' çalıştırın.")
+    return 0
+
+
+def _check(config_path: str) -> int:
+    report: dict = {
+        "version": __version__,
+        "python": platform.python_version(),
+        "bits": struct.calcsize("P") * 8,
+        "platform": platform.platform(),
+    }
+    ok = True
+    try:
+        settings = load_settings(config_path)
+        report["config"] = str(Path(config_path).resolve())
+        report["assistant_url"] = settings.assistant.chatbot_message_url
+        report["llm"] = {"base_url": settings.llm.base_url, "model": settings.llm.model}
+        report["output_dir"] = str(settings.output_dir)
+        try:
+            Credentials.from_env()
+            report["env"] = "tamam"
+        except ConfigError as e:
+            report["env"] = str(e)
+            ok = False
+    except Exception as e:  # noqa: BLE001
+        report["config_error"] = str(e)
+        ok = False
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+    return 0 if ok else 1
 
 
 @contextlib.contextmanager

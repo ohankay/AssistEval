@@ -62,8 +62,14 @@ def main(argv=None) -> int:
                     help="llm-rubric hakemi: config.yaml'daki judge/llm veya her zaman geçen sahte hakem")
     ev.add_argument("--etiket", action="append", default=[], help="sadece bu etiketteki senaryolar (tekrarlanabilir)")
 
-    pfc = sub.add_parser("promptfoo", help="paketle gelen promptfoo'yu doğrudan çalıştır (ör. view, --version)")
-    pfc.add_argument("args", nargs=argparse.REMAINDER)
+    # "promptfoo" sonrası her şey olduğu gibi promptfoo'ya gider. argparse'a verilmez: REMAINDER,
+    # "-" ile başlayan ilk argümanı (ör. --version) yakalamıyor.
+    sub.add_parser("promptfoo", help="paketle gelen promptfoo'yu doğrudan çalıştır (ör. view, --version)")
+    argv = list(sys.argv[1:] if argv is None else argv)
+    passthrough: list[str] = []
+    if "promptfoo" in argv:
+        i = argv.index("promptfoo")
+        argv, passthrough = argv[: i + 1], argv[i + 1 :]
 
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(message)s")
@@ -73,7 +79,7 @@ def main(argv=None) -> int:
     if args.command == "check":
         return _check(args.config)
     if args.command == "promptfoo":
-        return _promptfoo_passthrough(args.config, args.args)
+        return _promptfoo_passthrough(args.config, passthrough)
     try:
         settings = load_settings(args.config)
         if args.command == "eval":

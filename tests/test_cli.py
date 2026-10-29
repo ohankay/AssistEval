@@ -32,3 +32,14 @@ def test_init_check_and_offline_mock_run(tmp_path, monkeypatch, capsys):
 def test_missing_config_is_reported(tmp_path, capsys):
     assert main(["--config", str(tmp_path / "yok.yaml"), "smoke"]) == 2
     assert "assisteval init" in capsys.readouterr().err
+
+
+def test_promptfoo_passthrough_keeps_option_arguments(monkeypatch, tmp_path):
+    from assisteval.evaluation import promptfoo as pf
+
+    calls = []
+    monkeypatch.setattr(pf, "run_promptfoo", lambda args, settings, cwd=None: calls.append(args) or 0)
+    cfg = str(tmp_path / "yok.yaml")  # config olmadan da çalışmalı
+    assert main(["--config", cfg, "promptfoo", "--version"]) == 0
+    assert main(["--config", cfg, "promptfoo", "view", "--port", "15500", "-y"]) == 0
+    assert calls == [["--version"], ["view", "--port", "15500", "-y"]]

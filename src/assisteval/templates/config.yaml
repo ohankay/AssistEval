@@ -27,4 +27,10 @@ llm:
   temperature: 0
   timeout_seconds: 120
 
+# Değerlendirme (promptfoo llm-rubric) hakemi. Verilmezse yukarıdaki llm ayarları kullanılır.
+# Drift'in hakemden değil asistandan geldiğinden emin olmak için hakem modeli sabit tutulmalı.
+# judge:
+#   base_url: http://localhost:8000/v1
+#   model: qwen
+
 output_dir: runs

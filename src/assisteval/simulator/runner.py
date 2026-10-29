@@ -47,6 +47,21 @@ class Transcript:
         self.data["bitis"] = _now()
         self.data["sonuc"] = {"durum": durum, "gerekce": gerekce, "tur_sayisi": tur_sayisi}
 
+    def render(self) -> str:
+        """Sohbetin düz metin hali (promptfoo çıktısı ve llm-rubric hakemi için)."""
+        lines = []
+        for t in self.data["turlar"]:
+            if t["rol"] == "musteri":
+                b = t.get("buton")
+                lines.append(f"MÜŞTERİ: [buton: {b['title']}]" if b else f"MÜŞTERİ: {t['gonderilen']}")
+            else:
+                cevap = t["cevap"]
+                body = "\n".join(cevap["texts"]) or "(metin yok)"
+                if cevap["buttons"]:
+                    body += "\nButonlar: " + ", ".join(f"[{b['title']}]" for b in cevap["buttons"])
+                lines.append("ASİSTAN: " + body.replace("\n", "\n         "))
+        return "\n".join(lines)
+
     def save(self, output_dir: Path) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")

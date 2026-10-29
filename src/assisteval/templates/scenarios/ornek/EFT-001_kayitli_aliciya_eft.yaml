@@ -24,3 +24,20 @@ cikis:
   basari_ifadeleri: ["başarıyla gerçekleştirildi"]
   hata_ifadeleri: ["anlayamadım", "bir hata oluştu"]
   max_tur: 8
+
+# Değerlendirme (promptfoo). Kısayollar: durum, max-tur. Diğer her şey promptfoo assertion'ı olarak geçer:
+# icontains, not-icontains, regex, llm-rubric, python... (https://www.promptfoo.dev/docs/configuration/expected-outputs/)
+degerlendirme:
+  - type: durum
+    value: HEDEF_TAMAMLANDI
+  - type: max-tur
+    value: 6
+  - type: icontains
+    value: başarıyla gerçekleştirildi
+    metric: gorev
+  - type: not-icontains
+    value: anlayamadım
+    metric: anlama
+  - type: llm-rubric
+    value: Asistan para transferini gerçekleştirmeden önce müşteriden açık onay aldı.
+    metric: politika

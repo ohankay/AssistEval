@@ -1,10 +1,9 @@
 name: Windows bundle
 
-# Repoya eklenen offline kurulum paketlerini gerçek Windows'ta, 64-bit ve 32-bit Python ile test eder:
-#   release/assisteval-windows-x64.zip, release/assisteval-windows-x86.zip
-# kaynakla güncellik, desteklenen her Python'da install.cmd ile internetsiz kurulum, offline mock koşum
-# ve yanlış mimari tespiti.
-# Zip'leri yeniden üretmek için: pip install uv packaging && python scripts/build_bundle.py
+# Repoya eklenen offline kurulum paketini (release/assisteval-windows-x64.zip) gerçek Windows'ta test eder:
+# kaynakla güncellik, desteklenen her Python'da install.cmd ile internetsiz kurulum, ağ kapalıyken
+# sahte asistanla simülasyon + promptfoo değerlendirmesi ve 32-bit Python'un reddedilmesi.
+# Zip'i yeniden üretmek için: pip install uv packaging && python scripts/build_bundle.py
 
 on:
   workflow_dispatch:
@@ -21,91 +20,130 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Zip'ler güncel kaynağı içermeli
+      - name: Zip güncel kaynağı ve build_bundle.py'deki sürümleri içermeli
         shell: python
         run: |
-          import io, pathlib, sys, zipfile
+          import io, json, pathlib, re, sys, zipfile
           norm = lambda b: b.replace(b"\r\n", b"\n")
           stale = []
-          for arch in ("x64", "x86"):
-              outer = zipfile.ZipFile(f"release/assisteval-windows-{arch}.zip")
-              names = outer.namelist()
-              if outer.read("assisteval/bundle_arch.txt").decode() != arch:
-                  stale.append(f"{arch}: bundle_arch.txt")
-              for f in ("install.cmd", "KURULUM_REHBERI.md"):
-                  if norm(outer.read(f"assisteval/{f}")) != norm(pathlib.Path("bundle", f).read_bytes()):
-                      stale.append(f"{arch}: {f}")
-              whl = next(n for n in names if n.startswith("assisteval/wheelhouse/assisteval-"))
-              inner = zipfile.ZipFile(io.BytesIO(outer.read(whl)))
-              root = pathlib.Path("src")
-              for src in root.joinpath("assisteval").rglob("*"):
-                  if src.is_file() and "__pycache__" not in src.parts:
-                      arc = src.relative_to(root).as_posix()
-                      if arc not in inner.namelist() or norm(inner.read(arc)) != norm(src.read_bytes()):
-                          stale.append(f"{arch}: {src}")
+          outer = zipfile.ZipFile("release/assisteval-windows-x64.zip")
+          names = set(outer.namelist())
+          for f in ("install.cmd", "KURULUM_REHBERI.md"):
+              if norm(outer.read(f"assisteval/{f}")) != norm(pathlib.Path("bundle", f).read_bytes()):
+                  stale.append(f)
+          whl = next(n for n in names if n.startswith("assisteval/wheelhouse/assisteval-"))
+          inner = zipfile.ZipFile(io.BytesIO(outer.read(whl)))
+          root = pathlib.Path("src")
+          for src in root.joinpath("assisteval").rglob("*"):
+              if src.is_file() and "__pycache__" not in src.parts:
+                  arc = src.relative_to(root).as_posix()
+                  if arc not in inner.namelist() or norm(inner.read(arc)) != norm(src.read_bytes()):
+                      stale.append(str(src))
+          build = pathlib.Path("scripts/build_bundle.py").read_text(encoding="utf-8")
+          node_v = re.search(r'NODE_VERSION = "(.+?)"', build).group(1)
+          pf_v = re.search(r'PROMPTFOO_VERSION = "(.+?)"', build).group(1)
+          versions = outer.read("assisteval/versions.txt").decode()
+          if versions != f"node={node_v}\npromptfoo={pf_v}\n":
+              stale.append(f"versions.txt ({versions.strip()!r})")
+          pkg = json.loads(outer.read("assisteval/promptfoo/node_modules/promptfoo/package.json"))
+          if pkg["version"] != pf_v:
+              stale.append(f"promptfoo {pkg['version']} != {pf_v}")
+          for need in ("assisteval/node/node.exe",
+                       "assisteval/promptfoo/node_modules/promptfoo/dist/src/entrypoint.js",
+                       "assisteval/promptfoo/node_modules/@libsql/win32-x64-msvc/package.json",
+                       "assisteval/promptfoo/node_modules/@esbuild/win32-x64/package.json"):
+              if need not in names:
+                  stale.append(f"eksik: {need}")
           if stale:
               sys.exit("zip güncel değil, scripts/build_bundle.py çalıştırın: " + ", ".join(stale))
-          print("zip'ler güncel")
+          print(f"zip güncel (node {node_v}, promptfoo {pf_v})")
 
   install-test:
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, x86]
         python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-          architecture: ${{ matrix.arch }}
+          architecture: x64
       - name: Unzip
-        shell: pwsh
-        run: Expand-Archive release\assisteval-windows-${{ matrix.arch }}.zip -DestinationPath C:\bundle
-      - name: install.cmd ile offline kurulum (PyPI erişimi yok)
+        shell: cmd
+        run: |
+          mkdir C:\bundle
+          tar -xf release\assisteval-windows-x64.zip -C C:\bundle
+      - name: install.cmd ile offline kurulum (PyPI ve internet erişimi yok)
         shell: cmd
         env:
           ASSISTEVAL_HOME: C:\assisteval
           ASSISTEVAL_PYTHON: python
           PIP_INDEX_URL: http://127.0.0.1:9/blocked
+          HTTPS_PROXY: http://127.0.0.1:9
+          HTTP_PROXY: http://127.0.0.1:9
         run: |
           cd /d C:\bundle\assisteval
           call install.cmd
           if errorlevel 1 exit /b 1
-      - name: Smoke test (init + check + sahte asistanla offline koşum)
+      - name: Smoke test (ağ kapalı - init, check, simülasyon, promptfoo değerlendirmesi)
         shell: pwsh
+        env:
+          HTTPS_PROXY: http://127.0.0.1:9
+          HTTP_PROXY: http://127.0.0.1:9
+          NO_PROXY: 127.0.0.1,localhost
         run: |
           $exe = "C:\assisteval\Scripts\assisteval.exe"
+          $cfg = "C:\calisma\config.yaml"
           & $exe --version
           if ($LASTEXITCODE -ne 0) { exit 1 }
           & $exe init C:\calisma
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          & $exe --config C:\calisma\config.yaml check | Out-String | Write-Output
+
+          $check = & $exe --config $cfg check | Out-String
+          Write-Output $check
           if ($LASTEXITCODE -ne 1) { Write-Error "boş .env ile check 1 dönmeli"; exit 1 }
+          if (-not ($check | ConvertFrom-Json).promptfoo.surum) { Write-Error "check promptfoo'yu bulamadı"; exit 1 }
+
           # cmd ile yönlendirme: baytlar olduğu gibi dosyaya yazılır (PowerShell '>' yeniden kodlar)
-          cmd /c "$exe --config C:\calisma\config.yaml --assistant mock run C:\calisma\scenarios\ornek --llm mock > C:\calisma\cikti.txt"
-          if ($LASTEXITCODE -ne 0) { Get-Content C:\calisma\cikti.txt; exit 1 }
-          Get-Content C:\calisma\cikti.txt -Encoding utf8
+          cmd /c "$exe --config $cfg --assistant mock run C:\calisma\scenarios\ornek --llm mock > C:\calisma\run.txt"
+          if ($LASTEXITCODE -ne 0) { Get-Content C:\calisma\run.txt -Encoding utf8; exit 1 }
+          Get-Content C:\calisma\run.txt -Encoding utf8
           # Yönlendirilmiş çıktıda Türkçe karakterler korunmalı ("MÜŞTERİ")
-          & C:\assisteval\Scripts\python.exe -c "import sys; t = open(r'C:\calisma\cikti.txt', encoding='utf-8').read(); sys.exit(0 if 'M\u00dc\u015eTER\u0130' in t else 1)"
+          & C:\assisteval\Scripts\python.exe -c "import sys; t = open(r'C:\calisma\run.txt', encoding='utf-8').read(); sys.exit(0 if 'M\u00dc\u015eTER\u0130' in t else 1)"
           if ($LASTEXITCODE -ne 0) { Write-Error "yönlendirilmiş çıktıda Türkçe karakterler bozuk"; exit 1 }
-          $runs = @(Get-ChildItem C:\calisma\runs\*.json)
-          if ($runs.Count -ne 2) { Write-Error "2 transcript bekleniyordu, $($runs.Count) var"; exit 1 }
+
+          cmd /c "$exe --config $cfg --assistant mock eval C:\calisma\scenarios\ornek --llm mock --judge mock > C:\calisma\eval.txt 2>&1"
+          $rc = $LASTEXITCODE
+          Get-Content C:\calisma\eval.txt -Encoding utf8
+          if ($rc -ne 0) { Write-Error "eval $rc döndü"; exit 1 }
+          $run = Get-ChildItem C:\calisma\runs -Directory -Filter "eval-*" | Select-Object -First 1
+          if (-not (Test-Path "$($run.FullName)\rapor.html")) { Write-Error "rapor.html yok"; exit 1 }
+          $stats = (Get-Content "$($run.FullName)\sonuclar.json" -Raw -Encoding utf8 | ConvertFrom-Json).results.stats
+          if ($stats.successes -ne 2 -or $stats.failures -ne 0 -or $stats.errors -ne 0) { Write-Error "beklenmeyen sonuç: $($stats | ConvertTo-Json)"; exit 1 }
+
           $info = & C:\assisteval\Scripts\python.exe -c "import struct, sys; print('%d.%d-%d' % (sys.version_info[0], sys.version_info[1], struct.calcsize('P') * 8))"
-          $bits = if ("${{ matrix.arch }}" -eq "x86") { "32" } else { "64" }
-          if ($info -ne "${{ matrix.python }}-$bits") { Write-Error "venv $info, beklenen ${{ matrix.python }}-$bits"; exit 1 }
-          & C:\assisteval\Scripts\python.exe -c "import yaml; print('pyyaml', yaml.__version__, 'libyaml', yaml.__with_libyaml__)"
-      - name: Yanlış mimarideki paket açık bir mesajla reddedilmeli
+          if ($info -ne "${{ matrix.python }}-64") { Write-Error "venv $info, beklenen ${{ matrix.python }}-64"; exit 1 }
+
+  reject-32bit:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x86
+      - name: 32-bit Python açık bir mesajla reddedilmeli (kod 14)
         shell: cmd
         env:
-          ASSISTEVAL_HOME: C:\assisteval-wrong
+          ASSISTEVAL_HOME: C:\assisteval-32
           ASSISTEVAL_PYTHON: python
         run: |
-          if "${{ matrix.arch }}"=="x64" (set OTHER=x86) else (set OTHER=x64)
-          powershell -Command "Expand-Archive release\assisteval-windows-%OTHER%.zip -DestinationPath C:\other"
-          cd /d C:\other\assisteval
+          mkdir C:\bundle
+          tar -xf release\assisteval-windows-x64.zip -C C:\bundle
+          cd /d C:\bundle\assisteval
           call install.cmd
           if not "%ERRORLEVEL%"=="14" ( echo 14 bekleniyordu, %ERRORLEVEL% geldi & exit /b 1 )
-          echo yanlis mimari kontrolu OK
+          echo 32-bit kontrolu OK
           exit /b 0

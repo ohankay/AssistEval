@@ -42,6 +42,7 @@ class Scenario:
     hata_ifadeleri: list[str] = field(default_factory=list)
     basari_kriteri: str = ""
     basarisizlik_kriteri: str = ""
+    degerlendirme: list[dict] = field(default_factory=list)  # promptfoo assertion'ları (+ kısayollar)
 
     def to_dict(self) -> dict:
         return {"id": self.id, "baslik": self.baslik, "mod": self.mod, "dosya": str(self.path), "etiketler": self.etiketler}
@@ -81,7 +82,16 @@ def load_scenario(path: str | Path) -> Scenario:
         hata_ifadeleri=list(cikis.get("hata_ifadeleri") or []),
         basari_kriteri=cikis.get("basari", ""),
         basarisizlik_kriteri=cikis.get("basarisizlik", ""),
+        degerlendirme=_parse_assertions(path, data.get("degerlendirme")),
     )
+
+
+def _parse_assertions(path: Path, raw) -> list[dict]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or not all(isinstance(a, dict) and a.get("type") for a in raw):
+        raise ScenarioError(f"{path}: 'degerlendirme' her biri 'type' alanı olan bir liste olmalı")
+    return raw
 
 
 def _parse_step(path: Path, i: int, raw) -> Step:

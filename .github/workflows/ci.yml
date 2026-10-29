@@ -16,27 +16,36 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.3"
+      - name: promptfoo (build_bundle.py ile aynı sürüm)
+        run: |
+          PF=$(python -c "import re; print(re.search(r'PROMPTFOO_VERSION = \"(.+?)\"', open('scripts/build_bundle.py').read()).group(1))")
+          npm install -g "promptfoo@$PF" --no-audit --no-fund
+          promptfoo --version
       - run: pip install -e ".[dev]"
-      - run: pytest -v
+      - name: Tests (promptfoo ile uçtan uca değerlendirme dahil)
+        env:
+          PROMPTFOO_DISABLE_TELEMETRY: "1"
+        run: pytest -v -rs
 
   test-windows:
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { arch: x64, python: "3.10" }
-          - { arch: x64, python: "3.14" }
-          - { arch: x86, python: "3.14" }
+        python: ["3.10", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-          architecture: ${{ matrix.arch }}
+          architecture: x64
       - run: pip install --prefer-binary -e ".[dev]"
       - name: Dependency check
         run: |
           pip check
           python -c "import requests, yaml, dotenv, truststore, struct; print('deps OK', struct.calcsize('P') * 8, 'bit')"
-      - run: pytest -v
+      # promptfoo'lu uçtan uca test Windows'ta bundle.yml içinde, offline paketle koşar
+      - run: pytest -v -rs

@@ -6,6 +6,9 @@
   assisteval smoke --mesaj "Kampanyalar"      # + tek mesaj
   assisteval run scenarios/ornek              # klasördeki tüm senaryolar
   assisteval --assistant mock run scenarios/ornek --llm mock   # tamamen offline deneme
+  assisteval eval scenarios/ornek             # promptfoo ile koşum + değerlendirme + HTML rapor
+  assisteval --assistant mock eval scenarios/ornek --llm mock --judge mock     # tamamen offline
+  assisteval promptfoo view                   # promptfoo arayüzü (koşum geçmişi)
 """
 
 import argparse
@@ -16,24 +19,18 @@ import os
 import platform
 import shutil
 import struct
+import subprocess
 import sys
-from dataclasses import replace
 from importlib import resources
 from pathlib import Path
 
 from . import __version__
-from .simulator.assistant_client import AssistantClient
 from .config import ConfigError, Credentials, load_settings
-from .simulator.llm import MockLLM, OpenAICompatibleLLM
-from .simulator.mock_assistant import MockServer
+from .evaluation import promptfoo as pf
+from .runtime import assistant_client, simulated_user
+from .simulator.assistant_client import AssistantClient
 from .simulator.runner import run_scenario
 from .simulator.scenario import ScenarioError, load_scenario
-from .simulator.user import LLMUser, ScriptUser
-
-MOCK_CREDS = Credentials(
-    customer_id="00000000", gsm_number="900000000000", password="121212", otp="121212",
-    ext_u_name="mock", ext_u_password="mock", reg_ext_u_name="mock", reg_ext_u_password="mock", reg_user_id="mock",
-)
 
 
 def main(argv=None) -> int:
@@ -58,6 +55,16 @@ def main(argv=None) -> int:
     run.add_argument("--llm", choices=("openai", "mock"), default="openai", help="yönlendirmeli mod için simülatör LLM'i")
     run.add_argument("--sessiz", action="store_true", help="sohbeti konsola yazdırma")
 
+    ev = sub.add_parser("eval", help="senaryoları promptfoo ile koş ve değerlendir")
+    ev.add_argument("paths", nargs="+", help="senaryo dosyaları veya klasörleri")
+    ev.add_argument("--llm", choices=("openai", "mock"), default="openai", help="yönlendirmeli mod için simülatör LLM'i")
+    ev.add_argument("--judge", choices=("config", "mock"), default="config",
+                    help="llm-rubric hakemi: config.yaml'daki judge/llm veya her zaman geçen sahte hakem")
+    ev.add_argument("--etiket", action="append", default=[], help="sadece bu etiketteki senaryolar (tekrarlanabilir)")
+
+    pfc = sub.add_parser("promptfoo", help="paketle gelen promptfoo'yu doğrudan çalıştır (ör. view, --version)")
+    pfc.add_argument("args", nargs=argparse.REMAINDER)
+
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(message)s")
 
@@ -65,13 +72,17 @@ def main(argv=None) -> int:
         return _init(Path(args.folder))
     if args.command == "check":
         return _check(args.config)
+    if args.command == "promptfoo":
+        return _promptfoo_passthrough(args.config, args.args)
     try:
         settings = load_settings(args.config)
-        with _client(settings, args.assistant) as client:
+        if args.command == "eval":
+            return _eval(settings, args)
+        with assistant_client(settings, args.assistant) as client:
             if args.command == "smoke":
                 return _smoke(client, args.mesaj)
             return _run(settings, client, args)
-    except (ConfigError, ScenarioError) as e:
+    except (ConfigError, ScenarioError, pf.PromptfooError) as e:
         print(f"HATA: {e}", file=sys.stderr)
         return 2
 
@@ -139,18 +150,69 @@ def _check(config_path: str) -> int:
     except Exception as e:  # noqa: BLE001
         report["config_error"] = str(e)
         ok = False
+    try:
+        cmd = pf.find_promptfoo()
+        out = subprocess.run(cmd + ["--version"], env=pf.promptfoo_env(None), capture_output=True,
+                             text=True, encoding="utf-8", errors="replace", timeout=120)
+        report["promptfoo"] = {"komut": cmd, "surum": out.stdout.strip().splitlines()[-1] if out.stdout.strip() else None}
+        ok = ok and out.returncode == 0
+    except Exception as e:  # noqa: BLE001
+        report["promptfoo"] = {"hata": str(e)}
+        ok = False
     print(json.dumps(report, indent=2, ensure_ascii=False))
     return 0 if ok else 1
 
 
-@contextlib.contextmanager
-def _client(settings, mode: str):
-    if mode == "real":
-        yield AssistantClient(settings.assistant, Credentials.from_env())
-        return
-    with MockServer() as srv:
-        cfg = replace(settings.assistant, base_url=srv.base_url, chatbot_message_url=srv.chatbot_message_url)
-        yield AssistantClient(cfg, MOCK_CREDS)
+def _promptfoo_passthrough(config_path: str, args: list[str]) -> int:
+    try:
+        settings = load_settings(config_path)
+    except ConfigError:
+        settings = None  # config olmadan da çalışsın (ör. --version)
+    try:
+        return pf.run_promptfoo(args, settings)
+    except pf.PromptfooError as e:
+        print(f"HATA: {e}", file=sys.stderr)
+        return 2
+
+
+def _eval(settings, args) -> int:
+    scenarios = [load_scenario(p) for p in _expand(args.paths)]
+    if args.etiket:
+        scenarios = [s for s in scenarios if set(args.etiket) & set(s.etiketler)]
+    if not scenarios:
+        print("Senaryo bulunamadı", file=sys.stderr)
+        return 2
+    pf.find_promptfoo()  # promptfoo yoksa koşuma başlamadan söyle
+    if args.assistant == "real":
+        Credentials.from_env()  # .env eksikse her senaryoda ayrı ayrı değil, baştan bir kez söyle
+
+    with contextlib.ExitStack() as stack:
+        judge_url = None
+        if args.judge == "mock":
+            from .simulator.mock_assistant import MockServer
+
+            judge_url = stack.enter_context(MockServer()).openai_base_url
+        run_dir = pf.prepare_run(scenarios, settings, args.assistant, args.llm, judge_url)
+        print(f"Koşum klasörü: {run_dir}\n{len(scenarios)} senaryo promptfoo ile koşuluyor...\n")
+        pf.run_promptfoo(["eval", "-c", "promptfooconfig.yaml", "--no-cache", "-j", "1",
+                          "-o", "sonuclar.json", "rapor.html"], settings, cwd=run_dir)
+
+    results = run_dir / "sonuclar.json"
+    if not results.exists():
+        print(f"HATA: promptfoo sonuç üretmedi ({results})", file=sys.stderr)
+        return 2
+    rows = pf.summarize(results)
+    print("\n=== Değerlendirme ===")
+    for r in rows:
+        skor = f"{r['skor']:.2f}" if isinstance(r["skor"], (int, float)) else "-"
+        metrikler = " ".join(f"{k}={v:.2f}" for k, v in r["metrikler"].items())
+        print(f"{r['durum']:<6} {skor:>5}  {r['senaryo']}  {metrikler}")
+        for k in r["kalanlar"]:
+            print(f"         ✗ {k}")
+    gecen = sum(r["durum"] == "GEÇTİ" for r in rows)
+    print(f"\n{gecen}/{len(rows)} senaryo geçti")
+    print(f"Rapor: {run_dir / 'rapor.html'}\nAyrıntılar: {results}")
+    return 0 if gecen == len(rows) else 1
 
 
 def _smoke(client: AssistantClient, mesaj: str | None) -> int:
@@ -173,7 +235,7 @@ def _run(settings, client: AssistantClient, args) -> int:
     results = []
     for s in scenarios:
         print(f"\n=== {s.id} · {s.baslik} ({s.mod}) ===")
-        user, llm_name = _user_for(s, settings, args.llm)
+        user, llm_name = simulated_user(s, settings, args.llm)
         meta = {"asistan": args.assistant, "asistan_url": client.cfg.chatbot_message_url, "simulator_llm": llm_name}
         on_event = None if args.sessiz else _print_event
         transcript = run_scenario(s, client, user, meta, on_event)
@@ -186,13 +248,6 @@ def _run(settings, client: AssistantClient, args) -> int:
     for sid, sonuc in results:
         print(f"{sid:<20} {sonuc['durum']:<18} {sonuc['tur_sayisi']} tur")
     return 0
-
-
-def _user_for(s, settings, llm_choice: str):
-    if s.mod == "script":
-        return ScriptUser(s), None
-    llm = MockLLM(s.yonlendirme) if llm_choice == "mock" else OpenAICompatibleLLM(settings.llm)
-    return LLMUser(s, llm), llm.name
 
 
 def _expand(paths: list[str]) -> list[Path]:

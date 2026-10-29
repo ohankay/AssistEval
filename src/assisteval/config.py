@@ -70,8 +70,10 @@ class LLMConfig:
 @dataclass
 class Settings:
     assistant: AssistantConfig
-    llm: LLMConfig
+    llm: LLMConfig  # simülatör LLM'i (yönlendirmeli mod)
+    judge: LLMConfig  # değerlendirmede llm-rubric hakemi (promptfoo); verilmezse llm ile aynı
     output_dir: Path
+    path: Path  # config.yaml'ın tam yolu
 
 
 def load_settings(path: str | Path = "config.yaml") -> Settings:
@@ -83,9 +85,13 @@ def load_settings(path: str | Path = "config.yaml") -> Settings:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
 
     llm = dict(data.get("llm", {}))
-    llm["api_key"] = os.environ.get("LLM_API_KEY", llm.get("api_key", "yok"))
+    llm["api_key"] = os.environ.get("LLM_API_KEY") or llm.get("api_key", "yok")
+    judge = {**llm, **(data.get("judge") or {})}
+    judge["api_key"] = os.environ.get("JUDGE_API_KEY") or judge.get("api_key") or llm["api_key"]
     return Settings(
         assistant=AssistantConfig(**data["assistant"]),
         llm=LLMConfig(**llm),
+        judge=LLMConfig(**judge),
         output_dir=path.parent / data.get("output_dir", "runs"),
+        path=path,
     )

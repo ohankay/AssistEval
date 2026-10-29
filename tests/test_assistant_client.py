@@ -1,7 +1,7 @@
 import pytest
 
 from assisteval.simulator.assistant_client import AssistantClient, AssistantError
-from assisteval.cli import MOCK_CREDS
+from assisteval.runtime import MOCK_CREDS
 from assisteval.config import AssistantConfig
 from assisteval.simulator.mock_assistant import MockBank, MockServer
 

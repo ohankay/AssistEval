@@ -1,7 +1,7 @@
 """Gerçek servislerle aynı endpoint'leri taklit eden sahte asistan sunucusu.
 
 Login → OTP → conversation → message akışını, token süresini ve conversationId'ye
-bağlı sohbet bağlamını taklit eder. Gerçek asistana erişim yokken simülatörü
+bağlı sohbet bağlamını taklit eder. Ayrıca OpenAI uyumlu sahte bir hakem (/v1/chat/completions) sunar. Gerçek asistana erişim yokken simülatörü
 uçtan uca denemek ve otomatik testler için kullanılır.
 
 Cevap formatı (gerçek format netleşene kadar tahmini): metin, buton ve kart içeren JSON listesi.
@@ -128,12 +128,24 @@ class MockBank:
         return [{"text": "Üzgünüm, bunu anlayamadım. Aşağıdakilerden birini seçebilirsiniz.", "buttons": MAIN_MENU}]
 
 
+def _judge_reply() -> dict:
+    """Sahte hakem (OpenAI uyumlu): llm-rubric'i offline denemek için her zaman geçer."""
+    verdict = json.dumps({"pass": True, "score": 1, "reason": "Sahte hakem: değerlendirme yapılmadı"}, ensure_ascii=False)
+    return {
+        "id": "mock", "object": "chat.completion", "model": "mock",
+        "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": verdict}}],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
+
+
 def _make_handler(bank: MockBank):
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
             raw = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode("utf-8")
             auth = self.headers.get("Authorization")
-            if self.path.rstrip("/").endswith("/api/Chat/Message"):
+            if self.path.rstrip("/").endswith("/chat/completions"):
+                status, payload = 200, _judge_reply()
+            elif self.path.rstrip("/").endswith("/api/Chat/Message"):
                 form = {k: v[0] for k, v in parse_qs(raw).items()}
                 status, payload = bank.handle_message(form, auth)
             else:
@@ -171,6 +183,10 @@ class MockServer:
     @property
     def chatbot_message_url(self) -> str:
         return self.root + "/chatbot//api/Chat/Message"
+
+    @property
+    def openai_base_url(self) -> str:
+        return self.root + "/v1"
 
     def __enter__(self) -> "MockServer":
         self.thread.start()

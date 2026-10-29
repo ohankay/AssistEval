@@ -11,3 +11,13 @@ adimlar:
 cikis:
   max_tur: 5
   hata_ifadeleri: ["anlayamadım", "bir hata oluştu"]
+
+degerlendirme:
+  - type: durum
+    value: SCRIPT_TAMAMLANDI
+  - type: icontains
+    value: kampanya
+    metric: gorev
+  - type: not-icontains
+    value: anlayamadım
+    metric: anlama

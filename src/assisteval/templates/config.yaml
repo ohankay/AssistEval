@@ -20,16 +20,27 @@ assistant:
     mobile_application_name: OrganikProd
     pwf_application_name: KTIOSDev
 
-# Simülatör LLM'i (yönlendirmeli mod). OpenAI uyumlu endpoint: vLLM, Ollama, LM Studio...
+# Simülatör LLM'i (yönlendirmeli mod).
+# Şimdilik Groq (geçici). API anahtarı .env'deki GROQ_API_KEY'den okunur; yoksa çalışırken terminalden
+# sorulur ve hiçbir dosyaya yazılmaz. base_url verilmezse Groq'un adresi kullanılır.
 llm:
-  base_url: http://localhost:8000/v1
-  model: qwen   # model netleşince güncellenecek
+  provider: groq
+  model: llama-3.3-70b-versatile
   temperature: 0
   timeout_seconds: 120
+
+# İleride kurum içi Qwen'e geçiş: yukarıdaki llm bölümünü bununla değiştirin (OpenAI uyumlu: vLLM, Ollama, LM Studio)
+# llm:
+#   provider: openai
+#   base_url: http://localhost:8000/v1
+#   model: qwen
+#   temperature: 0
+#   timeout_seconds: 120
 
 # Değerlendirme (promptfoo llm-rubric) hakemi. Verilmezse yukarıdaki llm ayarları kullanılır.
 # Drift'in hakemden değil asistandan geldiğinden emin olmak için hakem modeli sabit tutulmalı.
 # judge:
+#   provider: openai
 #   base_url: http://localhost:8000/v1
 #   model: qwen
 

@@ -21,12 +21,12 @@ Hedef platform: **Windows x64, 64-bit Python 3.10–3.14**. Kurulum tamamen offl
                              │  her senaryo için Python provider'ı çağırır
                              ▼
 Senaryo (YAML) ──▶ runner (döngü, exit kontrolü) ──▶ assistant_client ──▶ Bankacılık asistanı
-                     │   └─ simüle müşteri: ScriptUser | LLMUser (Qwen / mock)
+                     │   └─ simüle müşteri: ScriptUser | LLMUser (Groq → ileride Qwen / mock)
                      ▼
                runs/<zaman>_<id>.json  (transcript)
                              │
                              ▼
-       promptfoo assertion'ları: durum, max-tur, icontains, regex, llm-rubric (local LLM hakem)...
+       promptfoo assertion'ları: durum, max-tur, icontains, regex, llm-rubric (LLM hakem)...
                              ▼
                runs/eval-<zaman>/rapor.html + sonuclar.json
 ```
@@ -37,7 +37,7 @@ Senaryo (YAML) ──▶ runner (döngü, exit kontrolü) ──▶ assistant_cl
 | `simulator/reply.py` | Asistanın JSON cevabını metin + kart + buton (başlık → aksiyon) olarak ayrıştırır |
 | `simulator/scenario.py` | Senaryo YAML'ını yükler ve doğrular |
 | `simulator/user.py` | Simüle müşteri: `ScriptUser` (adımları sırayla oynatır), `LLMUser` (persona + hedef + yönlendirme ile LLM'e karar verdirir) |
-| `simulator/llm.py` | OpenAI uyumlu LLM istemcisi (vLLM / Ollama ile Qwen) + `MockLLM` |
+| `simulator/llm.py` | OpenAI uyumlu LLM istemcisi (şimdilik Groq, ileride vLLM / Ollama ile Qwen) + `MockLLM` |
 | `simulator/runner.py` | Sohbet döngüsü, exit kuralları, transcript |
 | `simulator/mock_assistant.py` | Gerçek servislerle aynı endpoint'leri taklit eden sahte sunucu + sahte hakem |
 | `evaluation/promptfoo.py` | Senaryolardan promptfoo config'i üretir, promptfoo'yu bulur ve çalıştırır, sonucu özetler |
@@ -70,6 +70,10 @@ Gizli bilgiler (test müşterisi, servis kullanıcısı şifreleri, LLM/hakem AP
 `.env` dosyasına yazılır. Gizli olmayan ayarlar (URL'ler, cihaz bilgisi, simülatör LLM'i `llm`, hakem `judge`)
 `config.yaml`'a yazılır. `.env` her zaman `config.yaml`'ın yanından okunur, çıktılar da onun yanındaki
 `runs/` klasörüne yazılır.
+
+Simülatör LLM'i şimdilik **Groq** (`llm.provider: groq`). Anahtar `.env`'deki `GROQ_API_KEY`'den okunur; boşsa
+`run`/`eval` başlarken terminalden (görünmez) sorulur ve hiçbir dosyaya yazılmaz. Kurum içi Qwen'e geçmek için
+`config.yaml`'da `provider: openai`, `base_url` ve `model` vermek yeterlidir (örnek şablonda yorum satırı olarak var).
 
 **Ağ notları:** AssistEval Windows sertifika deposunu kullanır (`truststore`), kurumsal CA'lar için ek ayar
 gerekmez. Proxy için `HTTPS_PROXY` / `NO_PROXY`, özel CA dosyası için `REQUESTS_CA_BUNDLE` (Python) ve

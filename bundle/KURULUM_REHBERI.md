@@ -56,6 +56,9 @@ Bu komut `config.yaml`, `.env`, `.env.example` ve `scenarios\ornek\` dosyaların
 
 URL'ler, cihaz bilgisi, simülatör LLM'i (`llm`) ve değerlendirme hakemi (`judge`) `config.yaml` içindedir.
 
+Simülatör LLM'i şimdilik Groq'dur. Groq API anahtarını `.env`'deki `GROQ_API_KEY` satırına yazabilir ya da boş bırakabilirsiniz:
+boşsa `assisteval run` / `eval` başlarken anahtar terminalde sorulur (yazarken görünmez, dosyaya kaydedilmez).
+
 ## 5. Kontrol ve ilk koşum
 
 ```

@@ -25,7 +25,7 @@ from importlib import resources
 from pathlib import Path
 
 from . import __version__
-from .config import ConfigError, Credentials, load_settings
+from .config import ConfigError, Credentials, ensure_api_key, load_settings
 from .evaluation import promptfoo as pf
 from .runtime import assistant_client, simulated_user
 from .simulator.assistant_client import AssistantClient
@@ -145,7 +145,9 @@ def _check(config_path: str) -> int:
         settings = load_settings(config_path)
         report["config"] = str(Path(config_path).resolve())
         report["assistant_url"] = settings.assistant.chatbot_message_url
-        report["llm"] = {"base_url": settings.llm.base_url, "model": settings.llm.model}
+        report["llm"] = {"provider": settings.llm.provider, "base_url": settings.llm.base_url, "model": settings.llm.model,
+                         "api_key": "var" if settings.llm.api_key or not settings.llm.needs_key else "yok (çalışırken sorulur)"}
+        report["judge"] = {"provider": settings.judge.provider, "base_url": settings.judge.base_url, "model": settings.judge.model}
         report["output_dir"] = str(settings.output_dir)
         try:
             Credentials.from_env()
@@ -191,6 +193,7 @@ def _eval(settings, args) -> int:
     pf.find_promptfoo()  # promptfoo yoksa koşuma başlamadan söyle
     if args.assistant == "real":
         Credentials.from_env()  # .env eksikse her senaryoda ayrı ayrı değil, baştan bir kez söyle
+    _ensure_keys(settings, scenarios, args.llm, args.judge)
 
     with contextlib.ExitStack() as stack:
         judge_url = None
@@ -237,6 +240,7 @@ def _run(settings, client: AssistantClient, args) -> int:
     if not scenarios:
         print("Senaryo bulunamadı", file=sys.stderr)
         return 2
+    _ensure_keys(settings, scenarios, args.llm, None)
 
     results = []
     for s in scenarios:
@@ -269,3 +273,18 @@ def _print_event(rol: str, text: str) -> None:
     print(prefix + lines[0])
     for line in lines[1:]:
         print(" " * len(prefix) + line)
+
+
+# promptfoo'da hakem LLM'i kullanan assertion türleri (başına "not-" gelebilir)
+MODEL_GRADED = {"llm-rubric", "g-eval", "factuality", "model-graded-closedqa", "model-graded-factuality",
+                "answer-relevance", "context-faithfulness", "context-recall", "context-relevance", "select-best"}
+
+
+def _ensure_keys(settings, scenarios, llm_choice: str, judge_choice: str | None) -> None:
+    """Gereken API anahtarları yoksa koşuma başlamadan bir kez terminalden sorar."""
+    if llm_choice != "mock" and any(s.mod != "script" for s in scenarios):
+        ensure_api_key(settings.llm, "Simülatör LLM'i")
+    if judge_choice == "config" and any(
+        str(a.get("type", "")).removeprefix("not-") in MODEL_GRADED for s in scenarios for a in s.degerlendirme or []
+    ):
+        ensure_api_key(settings.judge, "Değerlendirme hakemi")

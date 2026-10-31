@@ -6,7 +6,8 @@ import yaml
 from assisteval.config import GROQ_BASE_URL, ConfigError, ensure_api_key, load_settings
 from assisteval.simulator.llm import LLMError, OpenAICompatibleLLM
 
-KEY_ENVS = ("GROQ_API_KEY", "LLM_API_KEY", "JUDGE_API_KEY")
+KEY_ENVS = ("GROQ_API_KEY", "LLM_API_KEY", "JUDGE_API_KEY", "ASSISTANT_BASE_URL", "CHATBOT_MESSAGE_URL",
+            "LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL", "JUDGE_PROVIDER", "JUDGE_BASE_URL", "JUDGE_MODEL")
 
 
 @pytest.fixture(autouse=True)
@@ -52,6 +53,25 @@ def test_local_openai_provider_needs_no_key(tmp_path):
     s = load_settings(write_config(tmp_path, {"provider": "openai", "base_url": "http://localhost:8000/v1", "model": "qwen"}))
     assert not s.llm.needs_key and s.llm.api_key == "yok"
     ensure_api_key(s.llm, "x", prompt=lambda _: pytest.fail("sorulmamalı"))
+
+
+def test_env_overrides_config_yaml(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHATBOT_MESSAGE_URL", "https://test/chat")
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_BASE_URL", "http://qwen:8000/v1")
+    monkeypatch.setenv("LLM_MODEL", "qwen3")
+    monkeypatch.setenv("JUDGE_MODEL", "hakem")
+    s = load_settings(write_config(tmp_path, {"provider": "groq", "model": "m"}))
+    assert s.assistant.chatbot_message_url == "https://test/chat"
+    assert (s.llm.provider, s.llm.base_url, s.llm.model) == ("openai", "http://qwen:8000/v1", "qwen3")
+    assert (s.judge.base_url, s.judge.model) == ("http://qwen:8000/v1", "hakem")
+
+
+def test_empty_env_values_keep_config_yaml(tmp_path, monkeypatch):
+    for name in ("LLM_PROVIDER", "LLM_MODEL", "CHATBOT_MESSAGE_URL"):
+        monkeypatch.setenv(name, "")
+    s = load_settings(write_config(tmp_path, {"provider": "groq", "model": "m"}))
+    assert (s.llm.provider, s.llm.model) == ("groq", "m") and s.assistant.chatbot_message_url.startswith("https://")
 
 
 def test_invalid_provider(tmp_path):

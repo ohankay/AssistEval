@@ -9,3 +9,8 @@ build/
 dist/
 .venv/
 .promptfoo/
+
+# Repo kökü çalışma klasörü olarak kullanılıyor (assisteval init .)
+/config.yaml
+/.env.example
+/scenarios/

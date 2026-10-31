@@ -75,6 +75,12 @@ Simülatör LLM'i şimdilik **Groq** (`llm.provider: groq`). Anahtar `.env`'deki
 `run`/`eval` başlarken terminalden (görünmez) sorulur ve hiçbir dosyaya yazılmaz. Kurum içi Qwen'e geçmek için
 `config.yaml`'da `provider: openai`, `base_url` ve `model` vermek yeterlidir (örnek şablonda yorum satırı olarak var).
 
+Ortama göre değişen ayarlar `.env`'den de verilebilir; doluysa `config.yaml`'ın önüne geçer: `ASSISTANT_BASE_URL`,
+`CHATBOT_MESSAGE_URL`, `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_MODEL`, `JUDGE_PROVIDER`, `JUDGE_BASE_URL`, `JUDGE_MODEL`.
+
+Geliştirme makinesinde repo kökü çalışma klasörü olarak kullanılabilir (`assisteval init .`): `config.yaml`,
+`scenarios/` ve `runs/` git'e girmez, ayarlar kökteki `.env`'den okunur.
+
 **Ağ notları:** AssistEval Windows sertifika deposunu kullanır (`truststore`), kurumsal CA'lar için ek ayar
 gerekmez. Proxy için `HTTPS_PROXY` / `NO_PROXY`, özel CA dosyası için `REQUESTS_CA_BUNDLE` (Python) ve
 `NODE_EXTRA_CA_CERTS` (promptfoo) kullanılabilir. promptfoo'nun telemetrisi ve güncelleme kontrolü kapalıdır.

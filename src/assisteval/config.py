@@ -98,6 +98,7 @@ def load_settings(path: str | Path = "config.yaml") -> Settings:
     # .env her zaman config.yaml'ın yanından okunur (çalışılan dizinden bağımsız)
     load_dotenv(path.parent / ".env")
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    _apply_env_overrides(data)
 
     llm_yaml = dict(data.get("llm") or {})
     judge_yaml = dict(data.get("judge") or {})
@@ -114,6 +115,28 @@ def load_settings(path: str | Path = "config.yaml") -> Settings:
         output_dir=path.parent / data.get("output_dir", "runs"),
         path=path,
     )
+
+
+# Ortama göre değişen ayarlar .env'den de verilebilir; doluysa config.yaml'daki değerin önüne geçer
+ENV_OVERRIDES = {
+    "ASSISTANT_BASE_URL": ("assistant", "base_url"),
+    "CHATBOT_MESSAGE_URL": ("assistant", "chatbot_message_url"),
+    "LLM_PROVIDER": ("llm", "provider"),
+    "LLM_BASE_URL": ("llm", "base_url"),
+    "LLM_MODEL": ("llm", "model"),
+    "JUDGE_PROVIDER": ("judge", "provider"),
+    "JUDGE_BASE_URL": ("judge", "base_url"),
+    "JUDGE_MODEL": ("judge", "model"),
+}
+
+
+def _apply_env_overrides(data: dict) -> None:
+    for env, (section, key) in ENV_OVERRIDES.items():
+        value = os.environ.get(env, "").strip()
+        if value:
+            if not isinstance(data.get(section), dict):
+                data[section] = {}
+            data[section][key] = value
 
 
 def _llm_config(raw: dict, key_env: str, section: str, fallback_key: str = "") -> LLMConfig:

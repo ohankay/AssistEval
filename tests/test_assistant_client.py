@@ -1,9 +1,10 @@
 import pytest
 
 from assisteval.simulator.assistant_client import AssistantClient, AssistantError
-from assisteval.runtime import MOCK_CREDS
-from assisteval.config import AssistantConfig
-from assisteval.simulator.mock_assistant import MockBank, MockServer
+from assisteval.config import AssistantConfig, Credentials
+from tests.fakes import FAKE_CREDS, FakeBank, FakeServer
+
+CREDS = Credentials(**{env.lower(): value for env, value in FAKE_CREDS.items()})
 
 DEVICE = {
     "device_id": "TEST-DEVICE", "device_model": "iPhone", "device_os_name": "IOS", "device_os_version": "26.6",
@@ -14,11 +15,11 @@ DEVICE = {
 
 @pytest.fixture
 def server():
-    with MockServer(MockBank()) as srv:
+    with FakeServer(FakeBank()) as srv:
         yield srv
 
 
-def make_client(srv, creds=MOCK_CREDS, clock=None, **kw):
+def make_client(srv, creds=CREDS, clock=None, **kw):
     cfg = AssistantConfig(
         base_url=srv.base_url, chatbot_message_url=srv.chatbot_message_url, device=DEVICE,
         main_resource_code="MOBRMAINPG", main_resource_code_dashboard="MOBRDASHBO", main_resource_id=22027, **kw,
@@ -60,6 +61,6 @@ def test_relogin_on_401(server):
 def test_wrong_otp_fails(server):
     from dataclasses import replace
 
-    client = make_client(server, creds=replace(MOCK_CREDS, otp="000000"))
+    client = make_client(server, creds=replace(CREDS, otp="000000"))
     with pytest.raises(AssistantError, match="OtpLoginCompleteNew"):
         client.login()

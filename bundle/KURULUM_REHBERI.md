@@ -65,7 +65,6 @@ Bağlantıyı `assisteval check --llm` ile kontrol edin.
 ```
 assisteval check                                              # kurulum + ayarlar + promptfoo (ağ gerektirmez)
 assisteval check --llm                                        # + simulator ve judge LLM sunucularına bağlantı
-assisteval --assistant mock eval scenarios\ornek --simulator mock --judge mock   # LLM ve asistan olmadan deneme
 assisteval smoke --mesaj "Kampanya listele"                   # gerçek asistana bağlantı kontrolü
 assisteval eval scenarios\ornek                               # gerçek asistan + değerlendirme
 assisteval promptfoo view                                     # promptfoo arayüzü (koşum geçmişi)

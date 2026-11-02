@@ -1,5 +1,4 @@
 # Yarı yönlendirmeli mod: simülatör LLM'i persona + hedef + yönlendirmeye göre replik üretir.
-# --simulator mock ile koşulduğunda her adımdaki "çift tırnaklı" ifade söylenir (veya o başlıktaki butona tıklanır).
 id: EFT-001
 baslik: Kayıtlı alıcıya EFT
 etiketler: [kritik, para-transferi]

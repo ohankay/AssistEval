@@ -2,7 +2,8 @@ name: Windows bundle
 
 # Repoya eklenen offline kurulum paketini (release/assisteval-windows-x64.zip) gerçek Windows'ta test eder:
 # kaynakla güncellik, desteklenen her Python'da install.cmd ile internetsiz kurulum, ağ kapalıyken
-# sahte asistanla simülasyon + promptfoo değerlendirmesi ve 32-bit Python'un reddedilmesi.
+# test sunucusuna (tests/fakes.py: asistan + simulator/judge LLM'leri) karşı simülasyon + promptfoo
+# değerlendirmesi ve 32-bit Python'un reddedilmesi.
 # Zip'i yeniden üretmek için: pip install uv packaging && python scripts/build_bundle.py
 
 on:
@@ -87,7 +88,7 @@ jobs:
           cd /d C:\bundle\assisteval
           call install.cmd
           if errorlevel 1 exit /b 1
-      - name: Smoke test (ağ kapalı - init, check, simülasyon, promptfoo değerlendirmesi)
+      - name: Smoke test (ağ kapalı - init, check, test sunucusuna karşı simülasyon ve promptfoo değerlendirmesi)
         shell: pwsh
         env:
           HTTPS_PROXY: http://127.0.0.1:9
@@ -106,16 +107,25 @@ jobs:
           if ($LASTEXITCODE -ne 1) { Write-Error "boş .env ile check 1 dönmeli"; exit 1 }
           if (-not ($check | ConvertFrom-Json).promptfoo.surum) { Write-Error "check promptfoo'yu bulamadı"; exit 1 }
 
+          # Test sunucusu config.yaml ve .env'i kendi adresine yönlendirir; ürün gerçek bağlantı koduyla çalışır
+          $srv = Start-Process -FilePath C:\assisteval\Scripts\python.exe -ArgumentList "$env:GITHUB_WORKSPACE\tests\fakes.py", "C:\calisma" -PassThru -NoNewWindow
+          for ($i = 0; $i -lt 60 -and -not (Test-Path C:\calisma\.fake-ready)); $i++) { Start-Sleep -Milliseconds 500 }
+          if (-not (Test-Path C:\calisma\.fake-ready)) { Write-Error "test sunucusu başlamadı"; exit 1 }
+
+          & $exe --config $cfg check --llm
+          if ($LASTEXITCODE -ne 0) { Write-Error "check --llm başarısız"; exit 1 }
+
           # cmd ile yönlendirme: baytlar olduğu gibi dosyaya yazılır (PowerShell '>' yeniden kodlar)
-          cmd /c "$exe --config $cfg --assistant mock run C:\calisma\scenarios\ornek --simulator mock > C:\calisma\run.txt"
+          cmd /c "$exe --config $cfg run C:\calisma\scenarios\ornek > C:\calisma\run.txt"
           if ($LASTEXITCODE -ne 0) { Get-Content C:\calisma\run.txt -Encoding utf8; exit 1 }
           Get-Content C:\calisma\run.txt -Encoding utf8
           # Yönlendirilmiş çıktıda Türkçe karakterler korunmalı ("MÜŞTERİ")
           & C:\assisteval\Scripts\python.exe -c "import sys; t = open(r'C:\calisma\run.txt', encoding='utf-8').read(); sys.exit(0 if 'M\u00dc\u015eTER\u0130' in t else 1)"
           if ($LASTEXITCODE -ne 0) { Write-Error "yönlendirilmiş çıktıda Türkçe karakterler bozuk"; exit 1 }
 
-          cmd /c "$exe --config $cfg --assistant mock eval C:\calisma\scenarios\ornek --simulator mock --judge mock > C:\calisma\eval.txt 2>&1"
+          cmd /c "$exe --config $cfg eval C:\calisma\scenarios\ornek > C:\calisma\eval.txt 2>&1"
           $rc = $LASTEXITCODE
+          Stop-Process -Id $srv.Id -Force
           Get-Content C:\calisma\eval.txt -Encoding utf8
           if ($rc -ne 0) { Write-Error "eval $rc döndü"; exit 1 }
           $run = Get-ChildItem C:\calisma\runs -Directory -Filter "eval-*" | Select-Object -First 1

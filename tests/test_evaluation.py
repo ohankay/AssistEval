@@ -9,13 +9,17 @@ from assisteval.evaluation import asserts
 from assisteval.evaluation import promptfoo as pf
 from assisteval.evaluation.provider import call_api
 from assisteval.simulator.scenario import Scenario
+from tests.fakes import FakeServer, point_workspace_to
 
 
 @pytest.fixture
 def work(tmp_path):
+    """Sahte asistan ve LLM sunucusuna yönlendirilmiş çalışma klasörü."""
     folder = tmp_path / "calisma"
     assert main(["init", str(folder)]) == 0
-    return folder
+    with FakeServer() as srv:
+        point_workspace_to(folder, srv)
+        yield folder
 
 
 def scenario(degerlendirme):
@@ -45,7 +49,7 @@ def test_asserts_read_provider_metadata():
 
 
 def test_provider_runs_scenario_and_returns_transcript(work):
-    cfg = {"config": str(work / "config.yaml"), "assistant": "mock", "simulator": "mock"}
+    cfg = {"config": str(work / "config.yaml")}
     dosya = str(work / "scenarios" / "ornek" / "EFT-001_kayitli_aliciya_eft.yaml")
     result = call_api("EFT-001", {"config": cfg}, {"vars": {"senaryo": "EFT-001", "dosya": dosya}})
     assert "error" not in result
@@ -65,7 +69,7 @@ def test_config_has_no_secrets_and_relative_files(work, monkeypatch):
     from assisteval.simulator.scenario import load_scenario
 
     s = load_scenario(work / "scenarios" / "ornek" / "KMP-001_kampanya_listele.yaml")
-    run_dir = pf.prepare_run([s], settings, "mock", "mock")
+    run_dir = pf.prepare_run([s], settings)
     text = (run_dir / "promptfooconfig.yaml").read_text(encoding="utf-8")
     assert "gizli-anahtar" not in text
     assert "file://assisteval_provider.py" in text and (run_dir / pf.ASSERTS_FILE).exists()
@@ -82,8 +86,7 @@ def _promptfoo_available() -> bool:
 
 @pytest.mark.skipif(not _promptfoo_available(), reason="promptfoo kurulu değil")
 def test_eval_end_to_end_offline(work, capsys):
-    rc = main(["--config", str(work / "config.yaml"), "--assistant", "mock",
-               "eval", str(work / "scenarios" / "ornek"), "--simulator", "mock", "--judge", "mock"])
+    rc = main(["--config", str(work / "config.yaml"), "eval", str(work / "scenarios" / "ornek")])
     out = capsys.readouterr().out
     assert rc == 0, out
     assert "2/2 senaryo geçti" in out

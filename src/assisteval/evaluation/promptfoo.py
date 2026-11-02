@@ -104,28 +104,27 @@ def expand_assertions(scenario: Scenario) -> list[dict]:
     return out
 
 
-def judge_provider(settings: Settings, base_url: str | None = None) -> dict:
+def judge_provider(settings: Settings) -> dict:
     """llm-rubric hakemi: config.yaml'daki judge (yerel OpenAI uyumlu endpoint)."""
     judge = settings.judge
-    config = {"apiBaseUrl": base_url or judge.base_url or NO_JUDGE_URL, "temperature": judge.temperature}
+    config = {"apiBaseUrl": judge.base_url or NO_JUDGE_URL, "temperature": judge.temperature}
     if judge.max_tokens:
         config["max_tokens"] = judge.max_tokens
     if judge.extra_body:
         config["passthrough"] = dict(judge.extra_body)  # isteğe olduğu gibi eklenir
-    return {"id": f"openai:chat:{judge.model or 'mock'}", "config": config}
+    return {"id": f"openai:chat:{judge.model or 'judge-ayarli-degil'}", "config": config}
 
 
-def build_config(scenarios: list[Scenario], settings: Settings, assistant: str, simulator: str,
-                 judge_base_url: str | None = None) -> dict:
+def build_config(scenarios: list[Scenario], settings: Settings) -> dict:
     return {
         "description": f"AssistEval ({len(scenarios)} senaryo)",
         "prompts": ["{{senaryo}}"],
         "providers": [{
             "id": f"file://{PROVIDER_FILE}",
             "label": "asistan",
-            "config": {"config": str(settings.path), "assistant": assistant, "simulator": simulator},
+            "config": {"config": str(settings.path)},
         }],
-        "defaultTest": {"options": {"provider": judge_provider(settings, judge_base_url)}},
+        "defaultTest": {"options": {"provider": judge_provider(settings)}},
         "tests": [
             {
                 "description": f"{s.id} · {s.baslik}",
@@ -138,14 +137,13 @@ def build_config(scenarios: list[Scenario], settings: Settings, assistant: str, 
     }
 
 
-def prepare_run(scenarios: list[Scenario], settings: Settings, assistant: str, simulator: str,
-                judge_base_url: str | None = None) -> Path:
+def prepare_run(scenarios: list[Scenario], settings: Settings) -> Path:
     """runs/eval-<zaman>/ klasörünü config ve provider/assertion dosyalarıyla hazırlar."""
     run_dir = settings.output_dir / f"eval-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     run_dir.mkdir(parents=True, exist_ok=False)
     shutil.copyfile(HERE / "provider.py", run_dir / PROVIDER_FILE)
     shutil.copyfile(HERE / "asserts.py", run_dir / ASSERTS_FILE)
-    config = build_config(scenarios, settings, assistant, simulator, judge_base_url)
+    config = build_config(scenarios, settings)
     (run_dir / "promptfooconfig.yaml").write_text(
         yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
     return run_dir

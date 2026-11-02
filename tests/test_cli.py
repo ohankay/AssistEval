@@ -2,9 +2,10 @@ import json
 
 from assisteval import __version__
 from assisteval.cli import main
+from tests.fakes import FAKE_CREDS, FakeServer, point_workspace_to
 
 
-def test_init_check_and_offline_mock_run(tmp_path, monkeypatch, capsys):
+def test_init_check_and_run(tmp_path, monkeypatch, capsys):
     work = tmp_path / "calisma"
     assert main(["init", str(work)]) == 0
     assert (work / "config.yaml").exists() and (work / ".env").exists()
@@ -20,8 +21,15 @@ def test_init_check_and_offline_mock_run(tmp_path, monkeypatch, capsys):
     assert report["version"] == __version__ and report["bits"] in (32, 64)
     assert "GSM_NUMBER" in report["env"]
 
-    rc = main(["--config", str(work / "config.yaml"), "--assistant", "mock",
-               "run", str(work / "scenarios" / "ornek"), "--llm", "mock", "--sessiz"])
+    with FakeServer() as srv:
+        point_workspace_to(work, srv)
+        for name in FAKE_CREDS:  # ilk check boş .env'i ortama yükledi; load_dotenv mevcut değeri ezmez
+            monkeypatch.delenv(name, raising=False)
+        capsys.readouterr()
+        assert main(["--config", str(work / "config.yaml"), "check", "--llm"]) == 0
+        report = json.loads(capsys.readouterr().out)
+        assert report["env"] == "tamam" and report["simulator"]["baglanti"] == report["judge"]["baglanti"] == "tamam"
+        rc = main(["--config", str(work / "config.yaml"), "run", str(work / "scenarios" / "ornek"), "--sessiz"])
     assert rc == 0
     runs = sorted((work / "runs").glob("*.json"))  # runs/ config.yaml'ın yanında
     assert len(runs) == 2

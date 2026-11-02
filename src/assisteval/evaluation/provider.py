@@ -24,15 +24,10 @@ def _run(cfg: dict, vars_: dict) -> dict:
     scenario_path = vars_["dosya"]
     settings = load_settings(cfg["config"])
     scenario = load_scenario(scenario_path)
-    with assistant_client(settings, cfg.get("assistant", "real")) as client:
-        user, llm_name = simulated_user(scenario, settings, cfg.get("simulator", "config"))
-        meta = {
-            "kaynak": "promptfoo",
-            "asistan": cfg.get("assistant", "real"),
-            "asistan_url": client.cfg.chatbot_message_url,
-            "simulator_llm": llm_name,
-        }
-        transcript = run_scenario(scenario, client, user, meta)
+    client = assistant_client(settings)
+    user, llm_name = simulated_user(scenario, settings)
+    meta = {"kaynak": "promptfoo", "asistan_url": client.cfg.chatbot_message_url, "simulator_llm": llm_name}
+    transcript = run_scenario(scenario, client, user, meta)
     path = transcript.save(settings.output_dir)
 
     sonuc = transcript.data["sonuc"]

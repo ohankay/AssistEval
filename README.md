@@ -21,7 +21,7 @@ Hedef platform: **Windows x64, 64-bit Python 3.10–3.14**. Kurulum tamamen offl
                              │  her senaryo için Python provider'ı çağırır
                              ▼
 Senaryo (YAML) ──▶ runner (döngü, exit kontrolü) ──▶ assistant_client ──▶ Bankacılık asistanı
-                     │   └─ simüle müşteri: ScriptUser | LLMUser (simulator LLM'i / mock)
+                     │   └─ simüle müşteri: ScriptUser | LLMUser (simulator LLM'i)
                      ▼
                runs/<zaman>_<id>.json  (transcript)
                              │
@@ -37,9 +37,8 @@ Senaryo (YAML) ──▶ runner (döngü, exit kontrolü) ──▶ assistant_cl
 | `simulator/reply.py` | Asistanın JSON cevabını metin + kart + buton (başlık → aksiyon) olarak ayrıştırır |
 | `simulator/scenario.py` | Senaryo YAML'ını yükler ve doğrular |
 | `simulator/user.py` | Simüle müşteri: `ScriptUser` (adımları sırayla oynatır), `LLMUser` (persona + hedef + yönlendirme ile LLM'e karar verdirir) |
-| `simulator/llm.py` | Kurum içi OpenAI uyumlu LLM istemcisi (vLLM / Ollama / LM Studio / TGI) + `MockLLM` |
+| `simulator/llm.py` | Kurum içi OpenAI uyumlu LLM istemcisi (vLLM / Ollama / LM Studio / TGI) |
 | `simulator/runner.py` | Sohbet döngüsü, exit kuralları, transcript |
-| `simulator/mock_assistant.py` | Gerçek servislerle aynı endpoint'leri taklit eden sahte sunucu + sahte hakem |
 | `evaluation/promptfoo.py` | Senaryolardan promptfoo config'i üretir, promptfoo'yu bulur ve çalıştırır, sonucu özetler |
 | `evaluation/provider.py` | promptfoo Python provider'ı: senaryoyu simülatörle koşar, sohbeti ve sonucu döner |
 | `evaluation/asserts.py` | Transcript'e bakan assertion'lar (`durum`, `max-tur`) |
@@ -78,8 +77,8 @@ Projede yalnızca iki LLM vardır ve ikisi de kurum içi sunucularda çalışan 
 
 | Bölüm | Görevi | Ne zaman gerekir |
 |---|---|---|
-| `simulator` | Yönlendirmeli modda müşteriyi oynar | `yonlendirmeli` senaryo koşulurken (`--simulator mock` değilse) |
-| `judge` | promptfoo'da `llm-rubric` ve diğer model-graded assertion'ların hakemi | böyle bir assertion varken (`--judge mock` değilse) |
+| `simulator` | Yönlendirmeli modda müşteriyi oynar | `yonlendirmeli` senaryo koşulurken |
+| `judge` | promptfoo'da `llm-rubric` ve diğer model-graded assertion'ların hakemi | böyle bir assertion varken |
 
 ```yaml
 simulator:
@@ -120,15 +119,11 @@ assisteval smoke --mesaj "Kampanya listele"
 
 # Sadece simülasyon (transcript üretir, değerlendirme yok)
 assisteval run scenarios/ornek
-assisteval run scenarios/ornek --simulator mock    # LLM yokken yönlendirmeli mod
 
 # Simülasyon + promptfoo değerlendirmesi
 assisteval eval scenarios/ornek                    # tüm senaryolar
 assisteval eval scenarios --etiket kritik          # sadece "kritik" etiketliler
 assisteval promptfoo view                          # promptfoo arayüzü: koşum geçmişi, karşılaştırma
-
-# Gerçek asistan, LLM ve hakem olmadan tamamen offline deneme
-assisteval --assistant mock eval scenarios/ornek --simulator mock --judge mock
 ```
 
 `eval`, her koşum için `runs/eval-<zaman>/` klasörü oluşturur:
@@ -209,6 +204,11 @@ pip install -e ".[dev]"
 npm install -g promptfoo@0.125.1        # uçtan uca değerlendirme testi için (yoksa o test atlanır)
 pytest -q
 ```
+
+Testler ağ gerektirmez. `tests/fakes.py` asistanı ve iki LLM'i (simulator, judge) taklit eden yerel bir sunucu
+açar; testler ürünün gerçek istemcilerini, `config.yaml`'da bu sunucunun adresleri yazılı olarak çalıştırır.
+Ürün kodunda sahte bağlantı yoktur. Kurulu paketi aynı şekilde denemek için: `python tests/fakes.py <çalışma klasörü>`
+(klasörü sunucuya yönlendirir, kapatılana kadar çalışır), ardından o klasörde `assisteval run` / `eval`.
 
 Kaynak değiştiğinde offline paketi yeniden üretin ve `release/` ile birlikte commit'leyin. Bunun için internet,
 `uv` ve `npm` gerekir:

@@ -3,11 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from assisteval.simulator.llm import MockLLM
-from assisteval.simulator.mock_assistant import MockBank, MockServer
 from assisteval.simulator.runner import BASARISIZ, DONGU, HATA, HEDEF_TAMAMLANDI, MAX_TUR, SCRIPT_TAMAMLANDI, SIMULATOR_TIKANDI, run_scenario
 from assisteval.simulator.scenario import Scenario, Step, load_scenario
 from assisteval.simulator.user import LLMUser, ScriptUser, parse_decision
+from tests.fakes import FakeBank, FakeServer, GuidedFakeLLM
 from tests.test_assistant_client import make_client
 
 EXAMPLES = Path(__file__).parent.parent / "src" / "assisteval" / "templates" / "scenarios" / "ornek"
@@ -15,7 +14,7 @@ EXAMPLES = Path(__file__).parent.parent / "src" / "assisteval" / "templates" / "
 
 @pytest.fixture
 def client():
-    with MockServer(MockBank()) as srv:
+    with FakeServer(FakeBank()) as srv:
         yield make_client(srv)
 
 
@@ -33,9 +32,9 @@ def test_example_script_scenario(client, tmp_path):
     assert saved["conversation_id"] and saved["turlar"][0]["tur"] == 0  # /get_started = tur 0
 
 
-def test_example_guided_scenario_with_mock_llm(client):
+def test_example_guided_scenario(client):
     s = load_scenario(EXAMPLES / "EFT-001_kayitli_aliciya_eft.yaml")
-    t = run_scenario(s, client, LLMUser(s, MockLLM(s.yonlendirme)), {})
+    t = run_scenario(s, client, LLMUser(s, GuidedFakeLLM()), {})
     assert t.data["sonuc"] == {"durum": HEDEF_TAMAMLANDI, "gerekce": "Başarı ifadesi görüldü: 'başarıyla gerçekleştirildi'", "tur_sayisi": 4}
 
 

@@ -2,23 +2,14 @@
 
 OpenAICompatibleLLM: kurum içi sunucuda çalışan OpenAI uyumlu endpoint (vLLM, Ollama, LM Studio,
 TGI...). Adres, model ve istek ayarları config.yaml'daki `simulator` bölümünden gelir.
-
-MockLLM: gerçek LLM yokken yönlendirmeli modu uçtan uca denemek için. Her turda
-yönlendirmedeki sıradaki adımı alır, çift tırnak içindeki ifadeyi söyler; ifade
-asistanın sunduğu bir butonun başlığıysa butona tıklar.
 """
 
-import json
-import re
 import time
 
 import requests
 
 from ..config import ConfigError, LLMConfig
-from .reply import _norm
 
-QUOTED = re.compile(r'"([^"]+)"|“([^”]+)”')
-BUTTON_LINE = re.compile(r"^\s*\[(.+?)\] →", re.MULTILINE)
 
 
 class LLMError(Exception):
@@ -91,26 +82,3 @@ def _retry_after(resp, default: float, cap: float) -> float:
         return min(float(resp.headers.get("retry-after", default)), cap)
     except (TypeError, ValueError):
         return min(default, cap)
-
-
-class MockLLM:
-    name = "mock"
-
-    def __init__(self, yonlendirme: list[str]):
-        self.yonlendirme = yonlendirme
-
-    def chat(self, messages: list[dict]) -> str:
-        turn = sum(1 for m in messages if m["role"] == "assistant")
-        if turn >= len(self.yonlendirme):
-            return json.dumps({"durum": "BITTI", "aksiyon": "mesaj", "deger": "", "gerekce": "Yönlendirme adımları tamamlandı"})
-
-        instruction = self.yonlendirme[turn]
-        match = QUOTED.search(instruction)
-        phrase = (match.group(1) or match.group(2)) if match else instruction
-        last_reply = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-        buttons = {_norm(b): b for b in BUTTON_LINE.findall(last_reply)}
-        if _norm(phrase) in buttons:
-            decision = {"aksiyon": "buton", "deger": buttons[_norm(phrase)]}
-        else:
-            decision = {"aksiyon": "mesaj", "deger": phrase}
-        return json.dumps({"durum": "DEVAM", **decision, "gerekce": f"Yönlendirme {turn + 1}. adım"}, ensure_ascii=False)

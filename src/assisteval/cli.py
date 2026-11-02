@@ -6,9 +6,7 @@
   assisteval smoke                            # login + yeni sohbet + /get_started (bağlantı kontrolü)
   assisteval smoke --mesaj "Kampanyalar"      # + tek mesaj
   assisteval run scenarios/ornek              # klasördeki tüm senaryolar
-  assisteval --assistant mock run scenarios/ornek --simulator mock   # LLM ve asistan olmadan deneme
   assisteval eval scenarios/ornek             # promptfoo ile koşum + değerlendirme + HTML rapor
-  assisteval --assistant mock eval scenarios/ornek --simulator mock --judge mock
   assisteval promptfoo view                   # promptfoo arayüzü (koşum geçmişi)
 """
 
@@ -40,7 +38,6 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="assisteval", description="AssistEval: bankacılık asistanı test simülatörü")
     parser.add_argument("--version", action="version", version=f"assisteval {__version__}")
     parser.add_argument("--config", default="config.yaml")
-    parser.add_argument("--assistant", choices=("real", "mock"), default="real", help="gerçek asistan veya sahte sunucu")
     parser.add_argument("-v", "--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -55,14 +52,10 @@ def main(argv=None) -> int:
 
     run = sub.add_parser("run", help="senaryo(ları) koş")
     run.add_argument("paths", nargs="+", help="senaryo dosyaları veya klasörleri")
-    _simulator_arg(run)
     run.add_argument("--sessiz", action="store_true", help="sohbeti konsola yazdırma")
 
     ev = sub.add_parser("eval", help="senaryoları promptfoo ile koş ve değerlendir")
     ev.add_argument("paths", nargs="+", help="senaryo dosyaları veya klasörleri")
-    _simulator_arg(ev)
-    ev.add_argument("--judge", choices=("config", "mock"), default="config",
-                    help="llm-rubric hakemi: config.yaml'daki judge LLM'i veya her zaman geçen sahte hakem")
     ev.add_argument("--etiket", action="append", default=[], help="sadece bu etiketteki senaryolar (tekrarlanabilir)")
 
     # "promptfoo" sonrası her şey olduğu gibi promptfoo'ya gider. argparse'a verilmez: REMAINDER,
@@ -87,18 +80,13 @@ def main(argv=None) -> int:
         settings = load_settings(args.config)
         if args.command == "eval":
             return _eval(settings, args)
-        with assistant_client(settings, args.assistant) as client:
-            if args.command == "smoke":
-                return _smoke(client, args.mesaj)
-            return _run(settings, client, args)
+        client = assistant_client(settings)
+        if args.command == "smoke":
+            return _smoke(client, args.mesaj)
+        return _run(settings, client, args)
     except (ConfigError, ScenarioError, pf.PromptfooError) as e:
         print(f"HATA: {e}", file=sys.stderr)
         return 2
-
-
-def _simulator_arg(parser) -> None:
-    parser.add_argument("--simulator", "--llm", dest="simulator", choices=("config", "mock"), default="config",
-                        help="yönlendirmeli modda müşteriyi oynayan LLM: config.yaml'daki simulator veya MockLLM")
 
 
 def _setup_console() -> None:
@@ -214,20 +202,13 @@ def _eval(settings, args) -> int:
         print("Senaryo bulunamadı", file=sys.stderr)
         return 2
     pf.find_promptfoo()  # promptfoo yoksa koşuma başlamadan söyle
-    if args.assistant == "real":
-        Credentials.from_env()  # .env eksikse her senaryoda ayrı ayrı değil, baştan bir kez söyle
-    _require_llms(settings, scenarios, args.simulator, args.judge)
+    Credentials.from_env()  # .env eksikse her senaryoda ayrı ayrı değil, baştan bir kez söyle
+    _require_llms(settings, scenarios)
 
-    with contextlib.ExitStack() as stack:
-        judge_url = None
-        if args.judge == "mock":
-            from .simulator.mock_assistant import MockServer
-
-            judge_url = stack.enter_context(MockServer()).openai_base_url
-        run_dir = pf.prepare_run(scenarios, settings, args.assistant, args.simulator, judge_url)
-        print(f"Koşum klasörü: {run_dir}\n{len(scenarios)} senaryo promptfoo ile koşuluyor...\n")
-        pf.run_promptfoo(["eval", "-c", "promptfooconfig.yaml", "--no-cache", "-j", "1",
-                          "-o", "sonuclar.json", "rapor.html"], settings, cwd=run_dir)
+    run_dir = pf.prepare_run(scenarios, settings)
+    print(f"Koşum klasörü: {run_dir}\n{len(scenarios)} senaryo promptfoo ile koşuluyor...\n")
+    pf.run_promptfoo(["eval", "-c", "promptfooconfig.yaml", "--no-cache", "-j", "1",
+                      "-o", "sonuclar.json", "rapor.html"], settings, cwd=run_dir)
 
     results = run_dir / "sonuclar.json"
     if not results.exists():
@@ -263,13 +244,13 @@ def _run(settings, client: AssistantClient, args) -> int:
     if not scenarios:
         print("Senaryo bulunamadı", file=sys.stderr)
         return 2
-    _require_llms(settings, scenarios, args.simulator, None)
+    _require_llms(settings, scenarios, judge=False)
 
     results = []
     for s in scenarios:
         print(f"\n=== {s.id} · {s.baslik} ({s.mod}) ===")
-        user, llm_name = simulated_user(s, settings, args.simulator)
-        meta = {"asistan": args.assistant, "asistan_url": client.cfg.chatbot_message_url, "simulator_llm": llm_name}
+        user, llm_name = simulated_user(s, settings)
+        meta = {"asistan_url": client.cfg.chatbot_message_url, "simulator_llm": llm_name}
         on_event = None if args.sessiz else _print_event
         transcript = run_scenario(s, client, user, meta, on_event)
         path = transcript.save(settings.output_dir)
@@ -303,11 +284,11 @@ MODEL_GRADED = {"llm-rubric", "g-eval", "factuality", "model-graded-closedqa", "
                 "answer-relevance", "context-faithfulness", "context-recall", "context-relevance", "select-best"}
 
 
-def _require_llms(settings, scenarios, simulator: str, judge: str | None) -> None:
+def _require_llms(settings, scenarios, judge: bool = True) -> None:
     """Koşumda gerçekten kullanılacak LLM'ler ayarlı değilse koşuma başlamadan söyler."""
-    if simulator != "mock" and any(s.mod != "script" for s in scenarios):
+    if any(s.mod != "script" for s in scenarios):
         settings.simulator.require()
-    if judge == "config" and any(
+    if judge and any(
         str(a.get("type", "")).removeprefix("not-") in MODEL_GRADED for s in scenarios for a in s.degerlendirme or []
     ):
         settings.judge.require()

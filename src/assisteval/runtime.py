@@ -27,9 +27,12 @@ def assistant_client(settings: Settings, mode: str):
         yield AssistantClient(cfg, MOCK_CREDS)
 
 
-def simulated_user(scenario: Scenario, settings: Settings, llm_choice: str):
-    """(simüle müşteri, kullanılan LLM'in adı) döner; script modunda LLM yoktur."""
+def simulated_user(scenario: Scenario, settings: Settings, simulator: str):
+    """(simüle müşteri, kullanılan LLM'in adı) döner; script modunda LLM yoktur.
+
+    simulator: "config" → config.yaml'daki simulator LLM'i, "mock" → MockLLM.
+    """
     if scenario.mod == "script":
         return ScriptUser(scenario), None
-    llm = MockLLM(scenario.yonlendirme) if llm_choice == "mock" else OpenAICompatibleLLM(settings.llm)
+    llm = MockLLM(scenario.yonlendirme) if simulator == "mock" else OpenAICompatibleLLM(settings.simulator)
     return LLMUser(scenario, llm), llm.name

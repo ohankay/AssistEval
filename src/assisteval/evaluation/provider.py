@@ -25,7 +25,7 @@ def _run(cfg: dict, vars_: dict) -> dict:
     settings = load_settings(cfg["config"])
     scenario = load_scenario(scenario_path)
     with assistant_client(settings, cfg.get("assistant", "real")) as client:
-        user, llm_name = simulated_user(scenario, settings, cfg.get("llm", "openai"))
+        user, llm_name = simulated_user(scenario, settings, cfg.get("simulator", "config"))
         meta = {
             "kaynak": "promptfoo",
             "asistan": cfg.get("assistant", "real"),

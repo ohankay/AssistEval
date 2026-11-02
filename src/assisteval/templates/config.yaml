@@ -20,28 +20,32 @@ assistant:
     mobile_application_name: OrganikProd
     pwf_application_name: KTIOSDev
 
-# Simülatör LLM'i (yönlendirmeli mod).
-# Şimdilik Groq (geçici). API anahtarı .env'deki GROQ_API_KEY'den okunur; yoksa çalışırken terminalden
-# sorulur ve hiçbir dosyaya yazılmaz. base_url verilmezse Groq'un adresi kullanılır.
-llm:
-  provider: groq
-  model: llama-3.3-70b-versatile
+# LLM'ler: kurum içi sunucularda çalışan OpenAI uyumlu endpoint'ler (vLLM, Ollama, LM Studio, TGI...).
+# Bulut sağlayıcı yoktur, internete çıkılmaz. İki LLM birbirinden bağımsızdır; ikisine aynı sunucu ve
+# model yazılabilir. base_url /v1 ile biter (Ollama: http://sunucu:11434/v1, vLLM: http://sunucu:8000/v1).
+# Sunucu anahtar istiyorsa (vLLM --api-key, iç gateway) .env'deki SIMULATOR_API_KEY / JUDGE_API_KEY.
+# Bu sunuculara her zaman proxy'siz gidilir (NO_PROXY'e eklenir). Bağlantı kontrolü: assisteval check --llm
+
+# Simüle müşteri: yönlendirmeli modda persona/hedef/yönlendirmeye göre replik üretir
+simulator:
+  base_url: http://localhost:8000/v1
+  model: qwen
   temperature: 0
   timeout_seconds: 120
+  # max_tokens: 1024
+  # İsteğe olduğu gibi eklenen alanlar. Qwen3 + vLLM'de düşünme modunu kapatmak için:
+  # extra_body:
+  #   chat_template_kwargs: {enable_thinking: false}
 
-# İleride kurum içi Qwen'e geçiş: yukarıdaki llm bölümünü bununla değiştirin (OpenAI uyumlu: vLLM, Ollama, LM Studio)
-# llm:
-#   provider: openai
-#   base_url: http://localhost:8000/v1
-#   model: qwen
-#   temperature: 0
-#   timeout_seconds: 120
-
-# Değerlendirme (promptfoo llm-rubric) hakemi. Verilmezse yukarıdaki llm ayarları kullanılır.
+# Değerlendirme hakemi: promptfoo'daki llm-rubric (ve diğer model-graded) assertion'ları.
 # Drift'in hakemden değil asistandan geldiğinden emin olmak için hakem modeli sabit tutulmalı.
-# judge:
-#   provider: openai
-#   base_url: http://localhost:8000/v1
-#   model: qwen
+judge:
+  base_url: http://localhost:8000/v1
+  model: qwen
+  temperature: 0
+  timeout_seconds: 120
+  # max_tokens: 1024
+  # extra_body:
+  #   chat_template_kwargs: {enable_thinking: false}
 
 output_dir: runs

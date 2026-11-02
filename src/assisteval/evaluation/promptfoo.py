@@ -28,6 +28,8 @@ DEFAULT_DURUM = [HEDEF_TAMAMLANDI, SCRIPT_TAMAMLANDI]
 # promptfoo'nun "file://dosya.py:fonksiyon" sözdizimiyle karışmasın diye)
 PROVIDER_FILE = "assisteval_provider.py"
 ASSERTS_FILE = "assisteval_asserts.py"
+# Hakem ayarlı değilken promptfoo varsayılanı olan bulut OpenAI adresine gitmesin: kapalı yerel port
+NO_JUDGE_URL = "http://127.0.0.1:9/v1"
 
 
 class PromptfooError(Exception):
@@ -67,7 +69,14 @@ def promptfoo_env(settings: Settings | None) -> dict:
     if settings:
         # Koşum geçmişi (promptfoo view) çalışma klasöründe dursun
         env["PROMPTFOO_CONFIG_DIR"] = str(settings.path.parent / ".promptfoo")
-        env["OPENAI_API_KEY"] = settings.judge.api_key or "yok"  # hakem anahtarı config dosyasına yazılmaz
+        # promptfoo'nun openai sağlayıcısı anahtar ister; yerel sunucu istemiyorsa yer tutucu yeterli.
+        # Anahtar config dosyasına yazılmaz.
+        env["OPENAI_API_KEY"] = settings.judge.api_key or "yok"
+        # promptfoo'nun kendi kendine açtığı openai çağrıları da (varsa) buluta değil hakem sunucusuna gitsin
+        env["OPENAI_BASE_URL"] = env["OPENAI_API_BASE_URL"] = settings.judge.base_url or NO_JUDGE_URL
+    # İç ağdaki https LLM sunucusunun kurumsal CA'sı Windows deposunda: Node da o depoya güvensin
+    if "--use-system-ca" not in env.get("NODE_OPTIONS", ""):
+        env["NODE_OPTIONS"] = (env.get("NODE_OPTIONS", "") + " --use-system-ca").strip()
     return env
 
 
@@ -95,21 +104,28 @@ def expand_assertions(scenario: Scenario) -> list[dict]:
     return out
 
 
-def build_config(scenarios: list[Scenario], settings: Settings, assistant: str, llm: str,
-                 judge_base_url: str | None = None) -> dict:
+def judge_provider(settings: Settings, base_url: str | None = None) -> dict:
+    """llm-rubric hakemi: config.yaml'daki judge (yerel OpenAI uyumlu endpoint)."""
     judge = settings.judge
+    config = {"apiBaseUrl": base_url or judge.base_url or NO_JUDGE_URL, "temperature": judge.temperature}
+    if judge.max_tokens:
+        config["max_tokens"] = judge.max_tokens
+    if judge.extra_body:
+        config["passthrough"] = dict(judge.extra_body)  # isteğe olduğu gibi eklenir
+    return {"id": f"openai:chat:{judge.model or 'mock'}", "config": config}
+
+
+def build_config(scenarios: list[Scenario], settings: Settings, assistant: str, simulator: str,
+                 judge_base_url: str | None = None) -> dict:
     return {
         "description": f"AssistEval ({len(scenarios)} senaryo)",
         "prompts": ["{{senaryo}}"],
         "providers": [{
             "id": f"file://{PROVIDER_FILE}",
             "label": "asistan",
-            "config": {"config": str(settings.path), "assistant": assistant, "llm": llm},
+            "config": {"config": str(settings.path), "assistant": assistant, "simulator": simulator},
         }],
-        "defaultTest": {"options": {"provider": {
-            "id": f"openai:chat:{judge.model}",
-            "config": {"apiBaseUrl": judge_base_url or judge.base_url, "temperature": judge.temperature},
-        }}},
+        "defaultTest": {"options": {"provider": judge_provider(settings, judge_base_url)}},
         "tests": [
             {
                 "description": f"{s.id} · {s.baslik}",
@@ -122,14 +138,14 @@ def build_config(scenarios: list[Scenario], settings: Settings, assistant: str, 
     }
 
 
-def prepare_run(scenarios: list[Scenario], settings: Settings, assistant: str, llm: str,
+def prepare_run(scenarios: list[Scenario], settings: Settings, assistant: str, simulator: str,
                 judge_base_url: str | None = None) -> Path:
     """runs/eval-<zaman>/ klasörünü config ve provider/assertion dosyalarıyla hazırlar."""
     run_dir = settings.output_dir / f"eval-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     run_dir.mkdir(parents=True, exist_ok=False)
     shutil.copyfile(HERE / "provider.py", run_dir / PROVIDER_FILE)
     shutil.copyfile(HERE / "asserts.py", run_dir / ASSERTS_FILE)
-    config = build_config(scenarios, settings, assistant, llm, judge_base_url)
+    config = build_config(scenarios, settings, assistant, simulator, judge_base_url)
     (run_dir / "promptfooconfig.yaml").write_text(
         yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
     return run_dir

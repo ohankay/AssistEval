@@ -54,16 +54,18 @@ Bu komut `config.yaml`, `.env`, `.env.example` ve `scenarios\ornek\` dosyaların
 
 **`.env` dosyasını kimseyle paylaşmayın ve git'e eklemeyin.**
 
-URL'ler, cihaz bilgisi, simülatör LLM'i (`llm`) ve değerlendirme hakemi (`judge`) `config.yaml` içindedir.
-
-Simülatör LLM'i şimdilik Groq'dur. Groq API anahtarını `.env`'deki `GROQ_API_KEY` satırına yazabilir ya da boş bırakabilirsiniz:
-boşsa `assisteval run` / `eval` başlarken anahtar terminalde sorulur (yazarken görünmez, dosyaya kaydedilmez).
+URL'ler, cihaz bilgisi ve iki LLM `config.yaml` içindedir: müşteriyi oynayan `simulator` ve değerlendirme
+hakemi `judge`. İkisi de kurum içi sunucudaki OpenAI uyumlu endpoint'tir (vLLM, Ollama, LM Studio...).
+Her birine sunucu adresini (`base_url`, `/v1` ile biter) ve model adını yazın; isterseniz ikisine aynı değerleri
+yazabilirsiniz. Sunucu anahtar istemiyorsa `.env`'deki `SIMULATOR_API_KEY` / `JUDGE_API_KEY` boş kalır.
+Bağlantıyı `assisteval check --llm` ile kontrol edin.
 
 ## 5. Kontrol ve ilk koşum
 
 ```
 assisteval check                                              # kurulum + ayarlar + promptfoo (ağ gerektirmez)
-assisteval --assistant mock eval scenarios\ornek --llm mock --judge mock   # tamamen offline deneme
+assisteval check --llm                                        # + simulator ve judge LLM sunucularına bağlantı
+assisteval --assistant mock eval scenarios\ornek --simulator mock --judge mock   # LLM ve asistan olmadan deneme
 assisteval smoke --mesaj "Kampanya listele"                   # gerçek asistana bağlantı kontrolü
 assisteval eval scenarios\ornek                               # gerçek asistan + değerlendirme
 assisteval promptfoo view                                     # promptfoo arayüzü (koşum geçmişi)
@@ -92,6 +94,6 @@ assisteval promptfoo view                                     # promptfoo arayü
 ## Sorun giderme
 
 - **SSL / sertifika hatası:** AssistEval Windows sertifika deposunu kullanır, kurumsal sertifikalar orada yüklüyse sorun çıkmaz. Özel bir CA dosyası gerekiyorsa `set REQUESTS_CA_BUNDLE=C:\yol\kurum-ca.pem` tanımlayın. promptfoo'nun hakeme bağlanırken kullanacağı CA için ayrıca `set NODE_EXTRA_CA_CERTS=C:\yol\kurum-ca.pem` tanımlayın.
-- **Proxy:** kurumsal proxy gerekiyorsa `set HTTPS_PROXY=http://proxy:port` tanımlayın. Proxy'den geçmemesi gereken iç adresler (asistan, LLM) için `NO_PROXY` kullanın.
+- **Proxy:** kurumsal proxy gerekiyorsa `set HTTPS_PROXY=http://proxy:port` tanımlayın. Proxy'den geçmemesi gereken asistan adresleri için `NO_PROXY` kullanın; `config.yaml`'daki LLM sunucuları otomatik olarak proxy'siz çağrılır.
 - **`.env içinde eksik değişkenler` hatası:** `assisteval check` hangi değişkenlerin boş olduğunu listeler.
 - **promptfoo dışarıya bağlanır mı?** Hayır. Telemetri ve güncelleme kontrolü kapalıdır, paylaşım (`promptfoo share`) kullanılmaz. Koşum geçmişi çalışma klasöründeki `.promptfoo\` altında tutulur.

@@ -21,12 +21,12 @@ Hedef platform: **Windows x64, 64-bit Python 3.10–3.14**. Kurulum tamamen offl
                              │  her senaryo için Python provider'ı çağırır
                              ▼
 Senaryo (YAML) ──▶ runner (döngü, exit kontrolü) ──▶ assistant_client ──▶ Bankacılık asistanı
-                     │   └─ simüle müşteri: ScriptUser | LLMUser (Groq → ileride Qwen / mock)
+                     │   └─ simüle müşteri: ScriptUser | LLMUser (simulator LLM'i / mock)
                      ▼
                runs/<zaman>_<id>.json  (transcript)
                              │
                              ▼
-       promptfoo assertion'ları: durum, max-tur, icontains, regex, llm-rubric (LLM hakem)...
+       promptfoo assertion'ları: durum, max-tur, icontains, regex, llm-rubric (judge LLM'i)...
                              ▼
                runs/eval-<zaman>/rapor.html + sonuclar.json
 ```
@@ -37,7 +37,7 @@ Senaryo (YAML) ──▶ runner (döngü, exit kontrolü) ──▶ assistant_cl
 | `simulator/reply.py` | Asistanın JSON cevabını metin + kart + buton (başlık → aksiyon) olarak ayrıştırır |
 | `simulator/scenario.py` | Senaryo YAML'ını yükler ve doğrular |
 | `simulator/user.py` | Simüle müşteri: `ScriptUser` (adımları sırayla oynatır), `LLMUser` (persona + hedef + yönlendirme ile LLM'e karar verdirir) |
-| `simulator/llm.py` | OpenAI uyumlu LLM istemcisi (şimdilik Groq, ileride vLLM / Ollama ile Qwen) + `MockLLM` |
+| `simulator/llm.py` | Kurum içi OpenAI uyumlu LLM istemcisi (vLLM / Ollama / LM Studio / TGI) + `MockLLM` |
 | `simulator/runner.py` | Sohbet döngüsü, exit kuralları, transcript |
 | `simulator/mock_assistant.py` | Gerçek servislerle aynı endpoint'leri taklit eden sahte sunucu + sahte hakem |
 | `evaluation/promptfoo.py` | Senaryolardan promptfoo config'i üretir, promptfoo'yu bulur ve çalıştırır, sonucu özetler |
@@ -66,17 +66,44 @@ assisteval check                          :: kurulum, ayarlar ve promptfoo kontr
 
 `install.cmd` 64-bit Python arar. Sadece 32-bit Python varsa bunu açıkça söyler (kod 14).
 
-Gizli bilgiler (test müşterisi, servis kullanıcısı şifreleri, LLM/hakem API anahtarları) çalışma klasöründeki
-`.env` dosyasına yazılır. Gizli olmayan ayarlar (URL'ler, cihaz bilgisi, simülatör LLM'i `llm`, hakem `judge`)
+Gizli bilgiler (test müşterisi, servis kullanıcısı şifreleri, gerekiyorsa LLM API anahtarları) çalışma klasöründeki
+`.env` dosyasına yazılır. Gizli olmayan ayarlar (URL'ler, cihaz bilgisi, `simulator` ve `judge` LLM'leri)
 `config.yaml`'a yazılır. `.env` her zaman `config.yaml`'ın yanından okunur, çıktılar da onun yanındaki
 `runs/` klasörüne yazılır.
 
-Simülatör LLM'i şimdilik **Groq** (`llm.provider: groq`). Anahtar `.env`'deki `GROQ_API_KEY`'den okunur; boşsa
-`run`/`eval` başlarken terminalden (görünmez) sorulur ve hiçbir dosyaya yazılmaz. Kurum içi Qwen'e geçmek için
-`config.yaml`'da `provider: openai`, `base_url` ve `model` vermek yeterlidir (örnek şablonda yorum satırı olarak var).
+### LLM'ler
+
+Projede yalnızca iki LLM vardır ve ikisi de kurum içi sunucularda çalışan **OpenAI uyumlu** endpoint'lerdir
+(vLLM, Ollama, LM Studio, TGI...). Bulut sağlayıcı yoktur, internete çıkılmaz.
+
+| Bölüm | Görevi | Ne zaman gerekir |
+|---|---|---|
+| `simulator` | Yönlendirmeli modda müşteriyi oynar | `yonlendirmeli` senaryo koşulurken (`--simulator mock` değilse) |
+| `judge` | promptfoo'da `llm-rubric` ve diğer model-graded assertion'ların hakemi | böyle bir assertion varken (`--judge mock` değilse) |
+
+```yaml
+simulator:
+  base_url: http://llm-sunucu:8000/v1   # /v1 ile biter; Ollama: http://sunucu:11434/v1
+  model: qwen
+  temperature: 0
+  timeout_seconds: 120
+  # max_tokens: 1024
+  # extra_body:                          # isteğe olduğu gibi eklenir
+  #   chat_template_kwargs: {enable_thinking: false}   # Qwen3 + vLLM: düşünme modunu kapat
+judge:
+  base_url: http://llm-sunucu:8000/v1   # simülatörle aynı sunucu/model olabilir
+  model: qwen
+```
+
+- İki bölüm birbirinden bağımsızdır, biri diğerinden değer devralmaz. Aynı sunucuyu kullanmak için ikisine aynı değerleri yazın.
+- Sunucu anahtar istiyorsa (vLLM `--api-key`, iç gateway) `.env`'deki `SIMULATOR_API_KEY` / `JUDGE_API_KEY`. Boşsa `Authorization` başlığı gönderilmez.
+- LLM sunucularına her zaman proxy'siz gidilir: adresleri `NO_PROXY`'e eklenir (Python ve promptfoo için).
+- promptfoo, iç ağdaki https sunucularda Windows sertifika deposuna güvenir (`--use-system-ca`). Hakem ayarlı değilse promptfoo'nun varsayılan bulut adresi yerine kapalı bir yerel adres kullanılır.
+- Meşgul sunucu (429/502/503/504) için bekleyip yeniden denenir. Qwen'in `<think>` blokları simülatör cevabından temizlenir.
+- Bağlantı ve model adı kontrolü: `assisteval check --llm` (iki sunucuya `GET /models` atar).
 
 Ortama göre değişen ayarlar `.env`'den de verilebilir; doluysa `config.yaml`'ın önüne geçer: `ASSISTANT_BASE_URL`,
-`CHATBOT_MESSAGE_URL`, `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_MODEL`, `JUDGE_PROVIDER`, `JUDGE_BASE_URL`, `JUDGE_MODEL`.
+`CHATBOT_MESSAGE_URL`, `SIMULATOR_BASE_URL`, `SIMULATOR_MODEL`, `JUDGE_BASE_URL`, `JUDGE_MODEL`.
 
 Geliştirme makinesinde repo kökü çalışma klasörü olarak kullanılabilir (`assisteval init .`): `config.yaml`,
 `scenarios/` ve `runs/` git'e girmez, ayarlar kökteki `.env`'den okunur.
@@ -93,7 +120,7 @@ assisteval smoke --mesaj "Kampanya listele"
 
 # Sadece simülasyon (transcript üretir, değerlendirme yok)
 assisteval run scenarios/ornek
-assisteval run scenarios/ornek --llm mock          # LLM yokken yönlendirmeli mod
+assisteval run scenarios/ornek --simulator mock    # LLM yokken yönlendirmeli mod
 
 # Simülasyon + promptfoo değerlendirmesi
 assisteval eval scenarios/ornek                    # tüm senaryolar
@@ -101,7 +128,7 @@ assisteval eval scenarios --etiket kritik          # sadece "kritik" etiketliler
 assisteval promptfoo view                          # promptfoo arayüzü: koşum geçmişi, karşılaştırma
 
 # Gerçek asistan, LLM ve hakem olmadan tamamen offline deneme
-assisteval --assistant mock eval scenarios/ornek --llm mock --judge mock
+assisteval --assistant mock eval scenarios/ornek --simulator mock --judge mock
 ```
 
 `eval`, her koşum için `runs/eval-<zaman>/` klasörü oluşturur:
@@ -160,7 +187,7 @@ Assertion'ların çalıştığı çıktı, sohbetin düz metnidir (`MÜŞTERİ: 
 `metric` adı verilen assertion'lar raporda kategori skoru olarak görünür (`gorev`, `politika`, `uslup`...).
 Drift izlerken bu skorların koşumlar arasında nasıl değiştiğine bakılır.
 
-`llm-rubric` hakemi `config.yaml`'daki `judge` ayarlarıdır, verilmezse `llm` ayarları kullanılır. Skorların
+`llm-rubric` hakemi `config.yaml`'daki `judge` LLM'idir. Skorların
 asistandaki değişimi yansıtması için hakem modeli sabit tutulmalıdır.
 
 ## Sonuç durumları

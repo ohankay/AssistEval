@@ -45,7 +45,7 @@ def test_asserts_read_provider_metadata():
 
 
 def test_provider_runs_scenario_and_returns_transcript(work):
-    cfg = {"config": str(work / "config.yaml"), "assistant": "mock", "llm": "mock"}
+    cfg = {"config": str(work / "config.yaml"), "assistant": "mock", "simulator": "mock"}
     dosya = str(work / "scenarios" / "ornek" / "EFT-001_kayitli_aliciya_eft.yaml")
     result = call_api("EFT-001", {"config": cfg}, {"vars": {"senaryo": "EFT-001", "dosya": dosya}})
     assert "error" not in result
@@ -83,7 +83,7 @@ def _promptfoo_available() -> bool:
 @pytest.mark.skipif(not _promptfoo_available(), reason="promptfoo kurulu değil")
 def test_eval_end_to_end_offline(work, capsys):
     rc = main(["--config", str(work / "config.yaml"), "--assistant", "mock",
-               "eval", str(work / "scenarios" / "ornek"), "--llm", "mock", "--judge", "mock"])
+               "eval", str(work / "scenarios" / "ornek"), "--simulator", "mock", "--judge", "mock"])
     out = capsys.readouterr().out
     assert rc == 0, out
     assert "2/2 senaryo geçti" in out

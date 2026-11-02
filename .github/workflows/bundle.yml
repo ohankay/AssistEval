@@ -107,14 +107,14 @@ jobs:
           if (-not ($check | ConvertFrom-Json).promptfoo.surum) { Write-Error "check promptfoo'yu bulamadı"; exit 1 }
 
           # cmd ile yönlendirme: baytlar olduğu gibi dosyaya yazılır (PowerShell '>' yeniden kodlar)
-          cmd /c "$exe --config $cfg --assistant mock run C:\calisma\scenarios\ornek --llm mock > C:\calisma\run.txt"
+          cmd /c "$exe --config $cfg --assistant mock run C:\calisma\scenarios\ornek --simulator mock > C:\calisma\run.txt"
           if ($LASTEXITCODE -ne 0) { Get-Content C:\calisma\run.txt -Encoding utf8; exit 1 }
           Get-Content C:\calisma\run.txt -Encoding utf8
           # Yönlendirilmiş çıktıda Türkçe karakterler korunmalı ("MÜŞTERİ")
           & C:\assisteval\Scripts\python.exe -c "import sys; t = open(r'C:\calisma\run.txt', encoding='utf-8').read(); sys.exit(0 if 'M\u00dc\u015eTER\u0130' in t else 1)"
           if ($LASTEXITCODE -ne 0) { Write-Error "yönlendirilmiş çıktıda Türkçe karakterler bozuk"; exit 1 }
 
-          cmd /c "$exe --config $cfg --assistant mock eval C:\calisma\scenarios\ornek --llm mock --judge mock > C:\calisma\eval.txt 2>&1"
+          cmd /c "$exe --config $cfg --assistant mock eval C:\calisma\scenarios\ornek --simulator mock --judge mock > C:\calisma\eval.txt 2>&1"
           $rc = $LASTEXITCODE
           Get-Content C:\calisma\eval.txt -Encoding utf8
           if ($rc -ne 0) { Write-Error "eval $rc döndü"; exit 1 }
